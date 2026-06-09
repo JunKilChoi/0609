@@ -1,18 +1,9 @@
-import sqlite3
-import bcrypt
+import random
+import time
+import html as html_lib
+
 import streamlit as st
-from datetime import datetime
-
-
-# =========================
-# 기본 관리자 계정
-# =========================
-# 수업용 빠른 버전입니다.
-# GitHub 저장소가 Public이면 이 비밀번호가 노출됩니다.
-# 가능하면 Private 저장소에서 사용하세요.
-
-ADMIN_USERNAME = "teacher"
-ADMIN_PASSWORD = "1234"
+import streamlit.components.v1 as components
 
 
 # =========================
@@ -20,457 +11,348 @@ ADMIN_PASSWORD = "1234"
 # =========================
 
 st.set_page_config(
-    page_title="회원 전용 게시판",
-    page_icon="📚",
+    page_title="짜잔! 발표자 뽑기",
+    page_icon="🎉",
     layout="centered",
 )
 
-DB_PATH = "app.db"
+
+# =========================
+# 화면 꾸미기 CSS
+# =========================
+
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #fff1f8 0%, #e0f7ff 45%, #fff8d6 100%);
+    }
+
+    .main-title {
+        text-align: center;
+        font-size: 48px;
+        font-weight: 900;
+        color: #ff4fa3;
+        text-shadow: 3px 3px 0px #fff, 6px 6px 0px #ffd166;
+        margin-bottom: 0px;
+    }
+
+    .sub-title {
+        text-align: center;
+        font-size: 20px;
+        color: #555;
+        margin-bottom: 30px;
+    }
+
+    .cute-box {
+        background: rgba(255, 255, 255, 0.78);
+        border-radius: 28px;
+        padding: 25px;
+        border: 4px dashed #ff9bd2;
+        box-shadow: 0 12px 30px rgba(255, 100, 170, 0.25);
+        margin-bottom: 25px;
+    }
+
+    .winner-card {
+        background: linear-gradient(135deg, #ff5fa2, #ffc857, #69dbff);
+        padding: 35px;
+        border-radius: 35px;
+        text-align: center;
+        color: white;
+        box-shadow: 0 20px 50px rgba(255, 95, 162, 0.45);
+        border: 6px solid white;
+        margin-top: 25px;
+        animation: pop 0.55s ease-out;
+    }
+
+    .winner-label {
+        font-size: 26px;
+        font-weight: 800;
+        margin-bottom: 8px;
+    }
+
+    .winner-name {
+        font-size: 64px;
+        font-weight: 1000;
+        text-shadow: 3px 3px 0px rgba(0,0,0,0.18);
+    }
+
+    .winner-message {
+        font-size: 22px;
+        font-weight: 700;
+        margin-top: 10px;
+    }
+
+    @keyframes pop {
+        0% {
+            transform: scale(0.3) rotate(-8deg);
+            opacity: 0;
+        }
+        70% {
+            transform: scale(1.08) rotate(3deg);
+            opacity: 1;
+        }
+        100% {
+            transform: scale(1) rotate(0deg);
+        }
+    }
+
+    div.stButton > button {
+        width: 100%;
+        height: 70px;
+        font-size: 26px;
+        font-weight: 900;
+        border-radius: 25px;
+        border: none;
+        background: linear-gradient(90deg, #ff5fa2, #ffc857, #69dbff);
+        color: white;
+        box-shadow: 0 10px 25px rgba(255, 95, 162, 0.35);
+    }
+
+    div.stButton > button:hover {
+        transform: scale(1.02);
+        border: none;
+        color: white;
+    }
+
+    .small-card {
+        background: rgba(255,255,255,0.75);
+        padding: 16px;
+        border-radius: 18px;
+        border: 2px solid rgba(255,255,255,0.9);
+        margin-bottom: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # =========================
-# DB 함수
+# 세션 상태
 # =========================
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+if "last_winner" not in st.session_state:
+    st.session_state.last_winner = None
 
 
-def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
+# =========================
+# 색종이 애니메이션
+# =========================
 
-    cur.execute("""
-        create table if not exists users (
-            id integer primary key autoincrement,
-            username text unique not null,
-            display_name text not null,
-            password_hash text not null,
-            role text not null default 'member',
-            status text not null default 'pending',
-            created_at text not null
-        )
-    """)
+def show_confetti():
+    emojis = ["🎉", "✨", "🌈", "⭐", "💖", "🎊", "🍀", "🧡", "💛", "💙"]
 
-    cur.execute("""
-        create table if not exists posts (
-            id integer primary key autoincrement,
-            title text not null,
-            body text not null,
-            author_id integer,
-            created_at text not null,
-            foreign key(author_id) references users(id)
-        )
-    """)
+    pieces = ""
+    for i in range(90):
+        left = random.randint(0, 100)
+        delay = random.uniform(0, 1.8)
+        duration = random.uniform(2.2, 4.5)
+        size = random.randint(18, 34)
+        emoji = random.choice(emojis)
 
-    conn.commit()
-    conn.close()
-
-
-def hash_password(password):
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(password, password_hash):
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-
-
-def get_user_by_username(username):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("select * from users where username = ?", (username,))
-    user = cur.fetchone()
-    conn.close()
-    return dict(user) if user else None
-
-
-def get_user_by_id(user_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("select * from users where id = ?", (user_id,))
-    user = cur.fetchone()
-    conn.close()
-    return dict(user) if user else None
-
-
-def create_user(username, display_name, password, role="member", status="pending"):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
+        pieces += f"""
+        <span class="confetti"
+              style="
+              left:{left}%;
+              animation-delay:{delay}s;
+              animation-duration:{duration}s;
+              font-size:{size}px;
+              ">
+              {emoji}
+        </span>
         """
-        insert into users
-        (username, display_name, password_hash, role, status, created_at)
-        values (?, ?, ?, ?, ?, ?)
+
+    components.html(
+        f"""
+        <style>
+        body {{
+            margin: 0;
+            overflow: hidden;
+            background: transparent;
+        }}
+
+        .confetti-area {{
+            position: relative;
+            width: 100%;
+            height: 220px;
+            overflow: hidden;
+            background: transparent;
+        }}
+
+        .confetti {{
+            position: absolute;
+            top: -50px;
+            animation-name: fall;
+            animation-timing-function: ease-in;
+            animation-fill-mode: forwards;
+        }}
+
+        @keyframes fall {{
+            0% {{
+                transform: translateY(-60px) rotate(0deg);
+                opacity: 1;
+            }}
+            100% {{
+                transform: translateY(260px) rotate(720deg);
+                opacity: 0;
+            }}
+        }}
+        </style>
+
+        <div class="confetti-area">
+            {pieces}
+        </div>
         """,
-        (
-            username,
-            display_name,
-            hash_password(password),
-            role,
-            status,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        ),
+        height=230,
     )
-    conn.commit()
-    conn.close()
-
-
-def ensure_admin():
-    admin = get_user_by_username(ADMIN_USERNAME)
-
-    if admin is None:
-        create_user(
-            username=ADMIN_USERNAME,
-            display_name="관리자",
-            password=ADMIN_PASSWORD,
-            role="admin",
-            status="approved",
-        )
-
-
-def update_user_status(user_id, status):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("update users set status = ? where id = ?", (status, user_id))
-    conn.commit()
-    conn.close()
-
-
-def update_user_role(user_id, role):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("update users set role = ? where id = ?", (role, user_id))
-    conn.commit()
-    conn.close()
-
-
-def delete_user(user_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("delete from users where id = ?", (user_id,))
-    conn.commit()
-    conn.close()
-
-
-def list_users():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("select * from users order by created_at desc")
-    users = cur.fetchall()
-    conn.close()
-    return [dict(user) for user in users]
-
-
-def create_post(title, body, author_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        insert into posts
-        (title, body, author_id, created_at)
-        values (?, ?, ?, ?)
-        """,
-        (
-            title,
-            body,
-            author_id,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        ),
-    )
-    conn.commit()
-    conn.close()
-
-
-def list_posts():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        select
-            posts.id,
-            posts.title,
-            posts.body,
-            posts.created_at,
-            users.display_name,
-            users.username
-        from posts
-        left join users on posts.author_id = users.id
-        order by posts.created_at desc
-        """
-    )
-    posts = cur.fetchall()
-    conn.close()
-    return [dict(post) for post in posts]
-
-
-def delete_post(post_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("delete from posts where id = ?", (post_id,))
-    conn.commit()
-    conn.close()
 
 
 # =========================
-# 세션
+# 이름 처리 함수
 # =========================
 
-def init_session():
-    if "user_id" not in st.session_state:
-        st.session_state.user_id = None
-
-
-def current_user():
-    if st.session_state.user_id is None:
-        return None
-
-    user = get_user_by_id(st.session_state.user_id)
-
-    if user is None:
-        st.session_state.user_id = None
-        return None
-
-    if user["status"] != "approved":
-        st.session_state.user_id = None
-        return None
-
-    return user
-
-
-def logout():
-    st.session_state.user_id = None
-    st.rerun()
+def parse_names(text):
+    names = []
+    for line in text.splitlines():
+        name = line.strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 # =========================
-# 화면: 회원가입
+# 메인 화면
 # =========================
 
-def page_signup():
-    st.title("회원가입")
-    st.write("가입 후 관리자가 승인해야 게시판을 이용할 수 있습니다.")
+st.markdown('<div class="main-title">🎉 짜잔! 발표자 뽑기 🎉</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">이름을 넣고 버튼을 누르면 오늘의 발표자가 화려하게 등장합니다!</div>', unsafe_allow_html=True)
 
-    with st.form("signup_form"):
-        display_name = st.text_input("이름 또는 별명")
-        username = st.text_input("아이디")
-        password = st.text_input("비밀번호", type="password")
-        password2 = st.text_input("비밀번호 확인", type="password")
-        submitted = st.form_submit_button("가입 신청")
+st.markdown('<div class="cute-box">', unsafe_allow_html=True)
 
-    if submitted:
-        username = username.strip().lower()
-        display_name = display_name.strip()
+default_names = """김민수
+이지우
+박서준
+최하윤
+정도윤
+한서아
+윤지호
+오유나"""
 
-        if not display_name:
-            st.error("이름 또는 별명을 입력하세요.")
-            return
+names_text = st.text_area(
+    "학생 이름을 한 줄에 한 명씩 입력하세요.",
+    value=default_names,
+    height=180,
+)
 
-        if len(username) < 4:
-            st.error("아이디는 4자 이상으로 입력하세요.")
-            return
+col1, col2 = st.columns(2)
 
-        if len(password) < 4:
-            st.error("수업용 간이 버전에서는 비밀번호를 4자 이상으로 입력하세요.")
-            return
+with col1:
+    exclude_picked = st.checkbox("이미 뽑힌 사람은 제외하기", value=True)
 
-        if password != password2:
-            st.error("비밀번호가 서로 다릅니다.")
-            return
+with col2:
+    slow_mode = st.checkbox("두근두근 연출 켜기", value=True)
 
-        if get_user_by_username(username):
-            st.error("이미 사용 중인 아이디입니다.")
-            return
+st.markdown("</div>", unsafe_allow_html=True)
 
-        create_user(username, display_name, password)
-        st.success("가입 신청이 완료되었습니다. 관리자의 승인을 기다려 주세요.")
+names = parse_names(names_text)
 
+pick_button = st.button("🎁 발표자 뽑기!")
 
-# =========================
-# 화면: 로그인
-# =========================
-
-def page_login():
-    st.title("로그인")
-
-    with st.form("login_form"):
-        username = st.text_input("아이디")
-        password = st.text_input("비밀번호", type="password")
-        submitted = st.form_submit_button("로그인")
-
-    if submitted:
-        username = username.strip().lower()
-        user = get_user_by_username(username)
-
-        if user is None:
-            st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
-            return
-
-        if not verify_password(password, user["password_hash"]):
-            st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
-            return
-
-        if user["status"] == "pending":
-            st.warning("아직 관리자 승인이 완료되지 않았습니다.")
-            return
-
-        if user["status"] == "blocked":
-            st.error("차단된 계정입니다.")
-            return
-
-        st.session_state.user_id = user["id"]
-        st.success(f"{user['display_name']}님, 로그인되었습니다.")
-        st.rerun()
-
-
-# =========================
-# 화면: 게시판
-# =========================
-
-def page_board(user):
-    st.title("회원 전용 게시판")
-
-    tab_write, tab_list = st.tabs(["글쓰기", "게시글 보기"])
-
-    with tab_write:
-        with st.form("post_form"):
-            title = st.text_input("제목")
-            body = st.text_area("내용", height=180)
-            submitted = st.form_submit_button("등록")
-
-        if submitted:
-            if not title.strip():
-                st.error("제목을 입력하세요.")
-                return
-
-            if not body.strip():
-                st.error("내용을 입력하세요.")
-                return
-
-            create_post(title.strip(), body.strip(), user["id"])
-            st.success("게시글이 등록되었습니다.")
-            st.rerun()
-
-    with tab_list:
-        posts = list_posts()
-
-        if not posts:
-            st.info("아직 게시글이 없습니다.")
-            return
-
-        for post in posts:
-            with st.container(border=True):
-                st.subheader(post["title"])
-
-                writer = post["display_name"] or "알 수 없음"
-                username = post["username"] or "unknown"
-
-                st.caption(
-                    f"작성자: {writer} ({username}) · 작성일: {post['created_at']}"
-                )
-
-                st.write(post["body"])
-
-                if user["role"] == "admin":
-                    if st.button("게시글 삭제", key=f"delete_post_{post['id']}"):
-                        delete_post(post["id"])
-                        st.warning("게시글을 삭제했습니다.")
-                        st.rerun()
-
-
-# =========================
-# 화면: 회원 관리
-# =========================
-
-def page_admin(user):
-    st.title("회원 관리")
-
-    users = list_users()
-
-    for target in users:
-        with st.container(border=True):
-            st.markdown(f"### {target['display_name']} / `{target['username']}`")
-            st.write(f"상태: **{target['status']}**")
-            st.write(f"권한: **{target['role']}**")
-            st.caption(f"가입일: {target['created_at']}")
-
-            col1, col2, col3, col4, col5 = st.columns(5)
-
-            with col1:
-                if st.button("승인", key=f"approve_{target['id']}"):
-                    update_user_status(target["id"], "approved")
-                    st.rerun()
-
-            with col2:
-                if st.button("차단", key=f"block_{target['id']}"):
-                    if target["id"] == user["id"]:
-                        st.error("자기 자신은 차단할 수 없습니다.")
-                    else:
-                        update_user_status(target["id"], "blocked")
-                        st.rerun()
-
-            with col3:
-                if st.button("회원화", key=f"member_{target['id']}"):
-                    update_user_role(target["id"], "member")
-                    st.rerun()
-
-            with col4:
-                if st.button("관리자화", key=f"admin_{target['id']}"):
-                    update_user_role(target["id"], "admin")
-                    update_user_status(target["id"], "approved")
-                    st.rerun()
-
-            with col5:
-                if st.button("삭제", key=f"delete_user_{target['id']}"):
-                    if target["id"] == user["id"]:
-                        st.error("자기 자신은 삭제할 수 없습니다.")
-                    else:
-                        delete_user(target["id"])
-                        st.rerun()
-
-
-# =========================
-# 메인
-# =========================
-
-def main():
-    init_db()
-    ensure_admin()
-    init_session()
-
-    user = current_user()
-
-    st.sidebar.title("메뉴")
-
-    if user is None:
-        menu = st.sidebar.radio("이동", ["로그인", "회원가입"])
-
-        if menu == "로그인":
-            page_login()
-        else:
-            page_signup()
-
+if pick_button:
+    if not names:
+        st.error("학생 이름을 먼저 입력하세요.")
     else:
-        st.sidebar.success(f"{user['display_name']}님")
-        st.sidebar.write(f"권한: {user['role']}")
+        candidates = names
 
-        menu_options = ["게시판"]
+        if exclude_picked:
+            not_picked = [name for name in names if name not in st.session_state.history]
 
-        if user["role"] == "admin":
-            menu_options.append("회원 관리")
+            if not_picked:
+                candidates = not_picked
+            else:
+                st.session_state.history = []
+                candidates = names
+                st.info("모든 학생이 한 번씩 뽑혀서 기록을 초기화했습니다.")
 
-        menu = st.sidebar.radio("이동", menu_options)
+        if slow_mode:
+            countdown_area = st.empty()
+            for word in ["두근...", "두근두근...", "과연 누구?", "3", "2", "1", "짜잔!"]:
+                countdown_area.markdown(
+                    f"""
+                    <div style="
+                        text-align:center;
+                        font-size:42px;
+                        font-weight:900;
+                        color:#ff4fa3;
+                        margin:25px;
+                    ">
+                        {word}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                time.sleep(0.45)
 
-        if st.sidebar.button("로그아웃"):
-            logout()
+        winner = random.choice(candidates)
+        st.session_state.last_winner = winner
+        st.session_state.history.append(winner)
 
-        if menu == "게시판":
-            page_board(user)
-
-        elif menu == "회원 관리":
-            page_admin(user)
+        st.balloons()
+        show_confetti()
 
 
-if __name__ == "__main__":
-    main()
+# =========================
+# 결과 화면
+# =========================
+
+if st.session_state.last_winner:
+    safe_winner = html_lib.escape(st.session_state.last_winner)
+
+    st.markdown(
+        f"""
+        <div class="winner-card">
+            <div class="winner-label">오늘의 발표자는...</div>
+            <div class="winner-name">{safe_winner}</div>
+            <div class="winner-message">👏 멋진 발표 기대합니다! 👏</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# =========================
+# 기록 관리
+# =========================
+
+st.divider()
+
+left, right = st.columns(2)
+
+with left:
+    st.subheader("📜 뽑힌 기록")
+    if st.session_state.history:
+        for i, name in enumerate(st.session_state.history, start=1):
+            st.markdown(
+                f"""
+                <div class="small-card">
+                    {i}. {html_lib.escape(name)}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.write("아직 뽑힌 사람이 없습니다.")
+
+with right:
+    st.subheader("🧹 기록 초기화")
+    st.write("다시 처음부터 뽑고 싶을 때 누르세요.")
+
+    if st.button("기록 초기화하기"):
+        st.session_state.history = []
+        st.session_state.last_winner = None
+        st.success("기록을 초기화했습니다.")
+        st.rerun()
