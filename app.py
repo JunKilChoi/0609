@@ -1,7 +1,7 @@
 # app.py
-# 중학교 2학년 과학: 연주시차, 겉보기 등급, 절대등급 탐구 앱
-# 데이터 출처: ESA Gaia Archive TAP API
-# 실행: streamlit run app.py
+# 중학교 2학년 과학: 겉보기 등급과 절대등급을 직관적으로 배우는 앱
+# 핵심 활동: 별의 실제 밝기와 거리를 조작하고, 10 pc 위치로 옮겨 절대등급을 확인한다.
+# 선택 활동: Gaia Archive TAP API에서 실제 별 자료를 불러와 확인한다.
 
 import io
 import math
@@ -15,74 +15,372 @@ import streamlit as st
 # 기본 설정
 # ------------------------------------------------------------
 st.set_page_config(
-    page_title="별의 거리와 밝기 탐구",
+    page_title="보이는 밝기와 실제 밝기",
     page_icon="⭐",
     layout="wide"
 )
 
 GAIA_TAP_SYNC_URL = "https://gea.esac.esa.int/tap-server/tap/sync"
+M_SUN = 4.83  # 태양의 절대등급에 가까운 참고값. 수업용 기준값으로 사용.
 
 
 # ------------------------------------------------------------
-# 화면 디자인 CSS
+# 세션 상태 기본값
 # ------------------------------------------------------------
-st.markdown(
+DISTANCE_OPTIONS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 150, 200, 300, 500, 700, 1000]
+LUMINOSITY_OPTIONS = [0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000]
+
+DEFAULTS = {
+    "a_distance": 5,
+    "a_luminosity": 0.3,
+    "b_distance": 100,
+    "b_luminosity": 100,
+    "view_mode": "apparent"
+}
+
+for key, value in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# ------------------------------------------------------------
+# 계산 함수
+# ------------------------------------------------------------
+def nearest_value(options, value):
+    """주어진 값과 가장 가까운 선택지 값을 반환한다."""
+    return min(options, key=lambda x: abs(x - value))
+
+
+def parallax_mas(distance_pc):
+    """거리 pc를 연주시차 mas로 바꾼다."""
+    return 1000 / distance_pc
+
+
+def absolute_magnitude(luminosity):
     """
+    실제 밝기 비율을 절대등급으로 바꾼다.
+    luminosity = 1이면 태양과 비슷한 실제 밝기라고 생각한다.
+    """
+    return M_SUN - 2.5 * math.log10(luminosity)
+
+
+def apparent_magnitude(abs_mag, distance_pc):
+    """
+    절대등급과 거리로 겉보기 등급을 계산한다.
+    거리가 10 pc이면 겉보기 등급 = 절대등급이다.
+    """
+    return abs_mag + 5 * math.log10(distance_pc / 10)
+
+
+def brightness_ratio_from_mag(mag1, mag2):
+    """등급 차이를 밝기 비율로 바꾼다."""
+    return 10 ** (abs(mag1 - mag2) / 2.5)
+
+
+def compare_mag(mag_a, mag_b, name_a="별 A", name_b="별 B"):
+    """
+    등급 숫자가 작을수록 밝다.
+    어느 별이 더 밝은지 설명 문장을 만든다.
+    """
+    if abs(mag_a - mag_b) < 0.05:
+        return "거의 같음", f"{name_a}와 {name_b}의 밝기는 거의 비슷합니다."
+
+    ratio = brightness_ratio_from_mag(mag_a, mag_b)
+
+    if mag_a < mag_b:
+        return name_a, f"{name_a}가 {name_b}보다 약 {ratio:.1f}배 밝습니다."
+    else:
+        return name_b, f"{name_b}가 {name_a}보다 약 {ratio:.1f}배 밝습니다."
+
+
+def log_position(distance_pc):
+    """
+    화면에서 별의 가로 위치를 정한다.
+    거리는 1~1000 pc 범위에서 로그 스케일처럼 배치한다.
+    """
+    distance_pc = max(1, min(1000, distance_pc))
+    return 8 + 84 * (math.log10(distance_pc) / 3)
+
+
+def visual_style(flux, max_flux):
+    """
+    밝기 값을 화면에서 보일 별 크기와 빛 번짐으로 바꾼다.
+    flux가 매우 작아도 별이 완전히 사라지지 않도록 최소 크기를 둔다.
+    """
+    if max_flux <= 0:
+        ratio = 0.1
+    else:
+        ratio = math.sqrt(max(flux / max_flux, 0.001))
+
+    size = 22 + 62 * ratio
+    glow = 8 + 36 * ratio
+    opacity = 0.35 + 0.65 * ratio
+
+    return size, glow, opacity
+
+
+def make_star_data(distance, luminosity):
+    """별 하나의 수업용 물리량을 딕셔너리로 정리한다."""
+    M = absolute_magnitude(luminosity)
+    m = apparent_magnitude(M, distance)
+
+    return {
+        "distance": distance,
+        "luminosity": luminosity,
+        "parallax": parallax_mas(distance),
+        "absolute_mag": M,
+        "apparent_mag": m,
+        "apparent_flux": luminosity / (distance ** 2),
+        "absolute_flux": luminosity / (10 ** 2),
+    }
+
+
+# ------------------------------------------------------------
+# CSS 애니메이션 장면 만들기
+# ------------------------------------------------------------
+def render_space_scene(star_a, star_b, mode):
+    """
+    별이 지구에서 떨어진 위치에 있을 때와,
+    두 별을 10 pc 위치로 옮겼을 때를 CSS 애니메이션으로 보여준다.
+    """
+
+    pos_a = log_position(star_a["distance"])
+    pos_b = log_position(star_b["distance"])
+    pos_10 = log_position(10)
+
+    if mode == "absolute":
+        flux_a = star_a["absolute_flux"]
+        flux_b = star_b["absolute_flux"]
+        title = "🚀 절대등급 모드: 두 별을 모두 10 pc 위치로 옮기는 중"
+        sub = "거리 조건을 같게 만들면, 별 자체가 얼마나 밝은지 비교할 수 있습니다."
+        animation_a = f"moveA 2.3s ease-in-out forwards"
+        animation_b = f"moveB 2.3s ease-in-out forwards"
+        final_label = "10 pc 기준"
+    else:
+        flux_a = star_a["apparent_flux"]
+        flux_b = star_b["apparent_flux"]
+        title = "👀 겉보기 모드: 지구에서 바라본 별"
+        sub = "가까운 별은 실제로 어두워도 밝게 보일 수 있습니다."
+        animation_a = "none"
+        animation_b = "none"
+        final_label = "현재 거리"
+
+    max_flux = max(flux_a, flux_b)
+    size_a, glow_a, opacity_a = visual_style(flux_a, max_flux)
+    size_b, glow_b, opacity_b = visual_style(flux_b, max_flux)
+
+    html = f"""
     <style>
-    .main-title {
-        font-size: 2.2rem;
+    .space-wrap {{
+        width: 100%;
+        min-height: 440px;
+        border-radius: 28px;
+        background:
+            radial-gradient(circle at 20% 20%, rgba(255,255,255,0.22), transparent 2px),
+            radial-gradient(circle at 80% 25%, rgba(255,255,255,0.18), transparent 2px),
+            radial-gradient(circle at 50% 70%, rgba(255,255,255,0.16), transparent 2px),
+            linear-gradient(135deg, #090a2a 0%, #12194a 45%, #241145 100%);
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
+        color: white;
+        font-family: 'Noto Sans KR', sans-serif;
+    }}
+
+    .scene-title {{
+        position: absolute;
+        top: 22px;
+        left: 28px;
+        font-size: 24px;
         font-weight: 900;
-        background: linear-gradient(90deg, #3b82f6, #a855f7, #ec4899);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
-    }
-    .sub-box {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 16px 18px;
-        margin-bottom: 16px;
-    }
-    .key-box {
-        background: #fff7ed;
-        border: 1px solid #fed7aa;
-        border-radius: 16px;
-        padding: 16px 18px;
-        margin-top: 12px;
-        margin-bottom: 12px;
-    }
-    .result-box {
-        background: #eef2ff;
-        border: 1px solid #c7d2fe;
-        border-radius: 16px;
-        padding: 16px 18px;
-        margin-top: 10px;
-        margin-bottom: 10px;
-    }
-    .small-text {
-        color: #475569;
-        font-size: 0.92rem;
-    }
+    }}
+
+    .scene-sub {{
+        position: absolute;
+        top: 60px;
+        left: 30px;
+        font-size: 15px;
+        color: #dbeafe;
+    }}
+
+    .earth {{
+        position: absolute;
+        left: 4%;
+        top: 53%;
+        transform: translate(-50%, -50%);
+        font-size: 46px;
+        text-align: center;
+        filter: drop-shadow(0 0 12px #60a5fa);
+    }}
+
+    .earth span {{
+        display: block;
+        font-size: 13px;
+        margin-top: 6px;
+        color: #bfdbfe;
+        font-weight: 700;
+    }}
+
+    .track {{
+        position: absolute;
+        left: 6%;
+        right: 5%;
+        top: 52%;
+        height: 3px;
+        background: linear-gradient(90deg, rgba(147,197,253,0.65), rgba(255,255,255,0.1));
+        border-radius: 999px;
+    }}
+
+    .marker10 {{
+        position: absolute;
+        left: {pos_10}%;
+        top: 22%;
+        height: 64%;
+        width: 2px;
+        border-left: 2px dashed rgba(251, 191, 36, 0.9);
+    }}
+
+    .marker10-label {{
+        position: absolute;
+        left: {pos_10}%;
+        top: 18%;
+        transform: translateX(-50%);
+        background: rgba(251, 191, 36, 0.18);
+        border: 1px solid rgba(251, 191, 36, 0.75);
+        color: #fde68a;
+        padding: 7px 11px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+    }}
+
+    .star {{
+        position: absolute;
+        transform: translate(-50%, -50%);
+        line-height: 1;
+        font-weight: 900;
+        z-index: 5;
+    }}
+
+    .star-a {{
+        left: {pos_a}%;
+        top: 41%;
+        font-size: {size_a}px;
+        color: #fef3c7;
+        opacity: {opacity_a};
+        text-shadow: 0 0 {glow_a}px #facc15, 0 0 {glow_a * 1.8}px #fb923c;
+        animation: {animation_a};
+    }}
+
+    .star-b {{
+        left: {pos_b}%;
+        top: 67%;
+        font-size: {size_b}px;
+        color: #dbeafe;
+        opacity: {opacity_b};
+        text-shadow: 0 0 {glow_b}px #60a5fa, 0 0 {glow_b * 1.8}px #818cf8;
+        animation: {animation_b};
+    }}
+
+    .star-label {{
+        position: absolute;
+        transform: translate(-50%, -50%);
+        font-size: 13px;
+        font-weight: 800;
+        background: rgba(15,23,42,0.72);
+        border: 1px solid rgba(255,255,255,0.25);
+        padding: 5px 9px;
+        border-radius: 999px;
+        white-space: nowrap;
+    }}
+
+    .label-a {{
+        left: {pos_a}%;
+        top: 30%;
+        animation: {"labelMoveA 2.3s ease-in-out forwards" if mode == "absolute" else "none"};
+    }}
+
+    .label-b {{
+        left: {pos_b}%;
+        top: 78%;
+        animation: {"labelMoveB 2.3s ease-in-out forwards" if mode == "absolute" else "none"};
+    }}
+
+    .bottom-note {{
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        bottom: 20px;
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(255,255,255,0.16);
+        border-radius: 18px;
+        padding: 13px 16px;
+        font-size: 15px;
+        color: #e0f2fe;
+    }}
+
+    @keyframes moveA {{
+        0% {{ left: {pos_a}%; transform: translate(-50%, -50%) scale(0.75); }}
+        65% {{ transform: translate(-50%, -50%) scale(1.2); }}
+        100% {{ left: {pos_10}%; transform: translate(-50%, -50%) scale(1); }}
+    }}
+
+    @keyframes moveB {{
+        0% {{ left: {pos_b}%; transform: translate(-50%, -50%) scale(0.75); }}
+        65% {{ transform: translate(-50%, -50%) scale(1.2); }}
+        100% {{ left: {pos_10}%; transform: translate(-50%, -50%) scale(1); }}
+    }}
+
+    @keyframes labelMoveA {{
+        0% {{ left: {pos_a}%; }}
+        100% {{ left: {pos_10}%; }}
+    }}
+
+    @keyframes labelMoveB {{
+        0% {{ left: {pos_b}%; }}
+        100% {{ left: {pos_10}%; }}
+    }}
     </style>
-    """,
-    unsafe_allow_html=True
-)
+
+    <div class="space-wrap">
+        <div class="scene-title">{title}</div>
+        <div class="scene-sub">{sub}</div>
+
+        <div class="track"></div>
+        <div class="earth">🌍<span>지구</span></div>
+
+        <div class="marker10"></div>
+        <div class="marker10-label">10 pc 위치<br>{final_label}</div>
+
+        <div class="star star-a">★</div>
+        <div class="star star-b">★</div>
+
+        <div class="star-label label-a">별 A</div>
+        <div class="star-label label-b">별 B</div>
+
+        <div class="bottom-note">
+            겉보기 등급은 <b>지구에서 보이는 밝기</b>입니다.
+            절대등급은 별을 모두 <b>10 pc 위치에 둔다고 가정했을 때의 밝기</b>입니다.
+        </div>
+    </div>
+    """
+
+    st.html(html)
 
 
 # ------------------------------------------------------------
-# Gaia TAP API 요청 함수
+# Gaia 자료 불러오기
 # ------------------------------------------------------------
-def make_adql_query(table_name, top_n, min_parallax, max_gmag, snr_limit, order_by):
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_gaia_data():
     """
-    Gaia Archive에 보낼 ADQL 쿼리를 만든다.
-    - parallax: 연주시차, 단위는 mas(밀리초각)
-    - phot_g_mean_mag: Gaia G밴드 겉보기 등급
-    - parallax_error: 연주시차 오차
+    Gaia Archive TAP API에서 실제 별 자료를 불러온다.
+    이 앱에서는 개념 학습이 핵심이므로 너무 많은 자료를 가져오지 않는다.
     """
 
-    query = f"""
-    SELECT TOP {top_n}
+    query = """
+    SELECT TOP 80
         source_id,
         ra,
         dec,
@@ -90,572 +388,345 @@ def make_adql_query(table_name, top_n, min_parallax, max_gmag, snr_limit, order_
         parallax_error,
         phot_g_mean_mag,
         bp_rp
-    FROM {table_name}
+    FROM gaiadr3.gaia_source_lite
     WHERE
         parallax IS NOT NULL
-        AND parallax > {min_parallax}
+        AND parallax > 1
         AND parallax_error IS NOT NULL
-        AND parallax / parallax_error > {snr_limit}
+        AND parallax / parallax_error > 20
         AND phot_g_mean_mag IS NOT NULL
-        AND phot_g_mean_mag <= {max_gmag}
-    ORDER BY {order_by}
-    """
-    return query
-
-
-def request_gaia_csv(adql_query):
-    """
-    ESA Gaia Archive TAP sync endpoint에 ADQL 쿼리를 보내고 CSV로 받는다.
-    Streamlit Cloud에서 별도 인증 없이 requests만으로 작동하도록 구성했다.
+        AND phot_g_mean_mag < 12
+    ORDER BY phot_g_mean_mag ASC
     """
 
     payload = {
         "REQUEST": "doQuery",
         "LANG": "ADQL",
         "FORMAT": "csv",
-        "QUERY": adql_query
+        "QUERY": query
     }
 
-    response = requests.post(
-        GAIA_TAP_SYNC_URL,
-        data=payload,
-        timeout=60
-    )
-
+    response = requests.post(GAIA_TAP_SYNC_URL, data=payload, timeout=60)
     response.raise_for_status()
+
     text = response.text.strip()
 
-    # 오류가 XML/VOTable 형태로 올 수 있으므로 간단히 감지한다.
     if text.startswith("<"):
-        raise RuntimeError("Gaia Archive에서 CSV가 아닌 응답을 받았습니다. 쿼리 오류일 가능성이 있습니다.")
+        raise RuntimeError("Gaia Archive에서 CSV가 아닌 응답을 받았습니다.")
 
     df = pd.read_csv(io.StringIO(text))
-    df.columns = [str(c).strip().lower() for c in df.columns]
-    return df
+    df.columns = [c.lower().strip() for c in df.columns]
 
-
-def add_derived_columns(df):
-    """
-    연주시차와 겉보기 등급으로부터 수업용 계산값을 추가한다.
-
-    거리(pc) = 1000 / 연주시차(mas)
-    절대등급 = 겉보기등급 - 5 log10(거리/10)
-             = 겉보기등급 + 5 - 5 log10(거리)
-    """
-
-    numeric_cols = ["ra", "dec", "parallax", "parallax_error", "phot_g_mean_mag", "bp_rp"]
-
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in ["ra", "dec", "parallax", "parallax_error", "phot_g_mean_mag", "bp_rp"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=["parallax", "phot_g_mean_mag"])
     df = df[df["parallax"] > 0].copy()
 
     df["distance_pc"] = 1000 / df["parallax"]
-    df["distance_ly"] = df["distance_pc"] * 3.26156
     df["absolute_g_mag"] = df["phot_g_mean_mag"] + 5 - 5 * np.log10(df["distance_pc"])
 
-    # 겉보기 밝기 지수와 실제 밝기 지수
-    # 등급은 숫자가 작을수록 밝으므로, 밝기 지수는 10^(-0.4 * 등급)으로 바꾼다.
-    df["apparent_brightness_index"] = 10 ** (-0.4 * df["phot_g_mean_mag"])
-    df["intrinsic_brightness_index"] = 10 ** (-0.4 * df["absolute_g_mag"])
+    # 절대등급을 태양 기준 실제 밝기 비율로 대략 변환한다.
+    df["luminosity_like"] = 10 ** ((M_SUN - df["absolute_g_mag"]) / 2.5)
 
     df = df.reset_index(drop=True)
-    df["star_no"] = df.index + 1
+    df["번호"] = df.index + 1
 
     return df
-
-
-def fallback_demo_data():
-    """
-    API 연결이 실패했을 때 앱 구조를 확인할 수 있도록 넣어둔 예시 자료.
-    실제 Gaia 자료가 아니므로 화면에 경고를 띄운다.
-    """
-
-    demo = pd.DataFrame(
-        [
-            {
-                "source_id": "DEMO_NEAR_DIM",
-                "ra": 10.0,
-                "dec": 5.0,
-                "parallax": 200.0,
-                "parallax_error": 1.0,
-                "phot_g_mean_mag": 9.5,
-                "bp_rp": 1.8
-            },
-            {
-                "source_id": "DEMO_FAR_BRIGHT",
-                "ra": 120.0,
-                "dec": -20.0,
-                "parallax": 5.0,
-                "parallax_error": 0.1,
-                "phot_g_mean_mag": 4.0,
-                "bp_rp": 0.1
-            },
-            {
-                "source_id": "DEMO_MIDDLE",
-                "ra": 240.0,
-                "dec": 40.0,
-                "parallax": 25.0,
-                "parallax_error": 0.5,
-                "phot_g_mean_mag": 7.0,
-                "bp_rp": 0.9
-            },
-        ]
-    )
-
-    return add_derived_columns(demo)
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def load_gaia_data(top_n, min_parallax, max_gmag, snr_limit, order_kind):
-    """
-    Gaia 자료를 불러온다.
-    먼저 빠른 조회용 gaia_source_lite를 시도하고,
-    실패하면 기본 gaia_source 테이블을 다시 시도한다.
-    """
-
-    top_n = int(top_n)
-    min_parallax = float(min_parallax)
-    max_gmag = float(max_gmag)
-    snr_limit = float(snr_limit)
-
-    order_map = {
-        "겉보기로 밝은 별 우선": "phot_g_mean_mag ASC",
-        "가까운 별 우선": "parallax DESC",
-        "연주시차가 비슷하지 않게 보기": "parallax ASC"
-    }
-    order_by = order_map.get(order_kind, "phot_g_mean_mag ASC")
-
-    candidate_tables = [
-        "gaiadr3.gaia_source_lite",
-        "gaiadr3.gaia_source"
-    ]
-
-    last_error = None
-
-    for table_name in candidate_tables:
-        try:
-            query = make_adql_query(
-                table_name=table_name,
-                top_n=top_n,
-                min_parallax=min_parallax,
-                max_gmag=max_gmag,
-                snr_limit=snr_limit,
-                order_by=order_by
-            )
-            raw_df = request_gaia_csv(query)
-            df = add_derived_columns(raw_df)
-
-            if len(df) >= 2:
-                return df, False, table_name
-
-        except Exception as e:
-            last_error = e
-
-    # 여기까지 오면 API 조회에 실패한 것
-    demo_df = fallback_demo_data()
-    return demo_df, True, f"API 조회 실패: {last_error}"
-
-
-# ------------------------------------------------------------
-# 비교 계산 함수
-# ------------------------------------------------------------
-def magnitude_ratio(mag1, mag2):
-    """
-    등급 차이로 밝기 비율을 계산한다.
-    등급 차이가 1이면 밝기는 약 2.512배 차이난다.
-    """
-
-    return 10 ** (abs(mag1 - mag2) / 2.5)
-
-
-def compare_magnitude(mag_a, mag_b, label_a="별 A", label_b="별 B"):
-    """
-    등급은 숫자가 작을수록 밝다.
-    두 별 중 어느 쪽이 밝은지와 몇 배 밝은지를 반환한다.
-    """
-
-    ratio = magnitude_ratio(mag_a, mag_b)
-
-    if abs(mag_a - mag_b) < 0.01:
-        return "거의 같음", 1.0, "두 별의 밝기는 거의 비슷합니다."
-
-    if mag_a < mag_b:
-        return label_a, ratio, f"{label_a}가 {label_b}보다 약 {ratio:.2f}배 밝습니다."
-    else:
-        return label_b, ratio, f"{label_b}가 {label_a}보다 약 {ratio:.2f}배 밝습니다."
-
-
-def make_star_label(row):
-    """
-    선택 상자에 표시할 별 이름을 만든다.
-    Gaia에는 일상적인 별 이름이 없는 경우가 많으므로 source_id를 사용한다.
-    """
-
-    source_id = str(row["source_id"])
-    return (
-        f"{int(row['star_no'])}번 | Gaia {source_id} | "
-        f"연주시차 {row['parallax']:.2f} mas | "
-        f"거리 {row['distance_pc']:.1f} pc | "
-        f"G {row['phot_g_mean_mag']:.2f}"
-    )
-
-
-def show_star_metrics(row, title):
-    """
-    별 하나의 핵심 관측값과 계산값을 보여준다.
-    """
-
-    st.markdown(f"### {title}")
-    st.metric("연주시차", f"{row['parallax']:.2f} mas")
-    st.metric("거리", f"{row['distance_pc']:.1f} pc")
-    st.metric("겉보기 등급 G", f"{row['phot_g_mean_mag']:.2f}")
-    st.metric("절대등급 M_G", f"{row['absolute_g_mag']:.2f}")
-
-
-# ------------------------------------------------------------
-# 사이드바 입력
-# ------------------------------------------------------------
-with st.sidebar:
-    st.header("⚙️ Gaia 자료 설정")
-
-    order_kind = st.selectbox(
-        "별 후보 정렬 방식",
-        ["겉보기로 밝은 별 우선", "가까운 별 우선", "연주시차가 비슷하지 않게 보기"]
-    )
-
-    top_n = st.slider(
-        "가져올 별 후보 수",
-        min_value=50,
-        max_value=500,
-        value=200,
-        step=50
-    )
-
-    min_parallax = st.slider(
-        "최소 연주시차(mas)",
-        min_value=1.0,
-        max_value=50.0,
-        value=5.0,
-        step=1.0
-    )
-
-    max_gmag = st.slider(
-        "가장 어두운 겉보기 등급 G",
-        min_value=5.0,
-        max_value=15.0,
-        value=12.0,
-        step=0.5
-    )
-
-    snr_limit = st.slider(
-        "연주시차 신뢰도 기준",
-        min_value=5,
-        max_value=50,
-        value=20,
-        step=5,
-        help="값이 클수록 연주시차 오차가 작은 별만 고릅니다."
-    )
-
-    if st.button("🔄 Gaia 자료 새로 불러오기"):
-        st.cache_data.clear()
-        st.rerun()
 
 
 # ------------------------------------------------------------
 # 메인 화면
 # ------------------------------------------------------------
-st.markdown('<div class="main-title">⭐ 별의 거리와 밝기 탐구 앱</div>', unsafe_allow_html=True)
+st.title("⭐ 보이는 밝기와 실제 밝기는 왜 다를까?")
+st.caption("중학교 2학년 과학 · 연주시차 · 겉보기 등급 · 절대등급 탐구")
 
 st.markdown(
     """
-    <div class="sub-box">
-    <b>탐구 목표</b><br>
-    별 두 개를 고른 뒤, 연주시차로 거리를 계산하고 겉보기 등급과 절대등급을 비교합니다.
-    이를 통해 <b>우리 눈에 밝게 보이는 별</b>과 <b>실제로 밝은 별</b>이 다를 수 있음을 확인합니다.
-    </div>
-    """,
-    unsafe_allow_html=True
+    이 앱은 별을 직접 움직여 보는 방식으로 구성했습니다.  
+    학생은 별의 **실제 밝기**와 **거리**를 조작하고, 지구에서 보이는 밝기가 어떻게 바뀌는지 확인합니다.  
+    그다음 두 별을 모두 **10 pc 위치**로 옮겨서 절대등급의 의미를 확인합니다.
+    """
 )
 
-with st.spinner("Gaia Archive에서 별 자료를 불러오는 중입니다..."):
-    stars, is_fallback, data_source = load_gaia_data(
-        top_n=top_n,
-        min_parallax=min_parallax,
-        max_gmag=max_gmag,
-        snr_limit=snr_limit,
-        order_kind=order_kind
-    )
-
-if is_fallback:
-    st.warning(
-        "Gaia API 연결에 실패하여 예시 자료로 실행 중입니다. "
-        "앱 구조 확인용 자료이며 실제 Gaia 관측값이 아닙니다."
-    )
-else:
-    st.success(f"Gaia Archive에서 {len(stars)}개의 별 후보를 불러왔습니다. 사용 테이블: {data_source}")
-
-tab1, tab2, tab3 = st.tabs(["🔭 별 두 개 비교하기", "📘 개념 정리", "📊 Gaia 데이터 보기"])
+tab1, tab2, tab3 = st.tabs(["🌌 조작 실험실", "🎯 미션 활동", "🔭 실제 Gaia 자료"])
 
 
 # ------------------------------------------------------------
-# 탭 1: 별 두 개 비교하기
+# 탭 1: 조작 실험실
 # ------------------------------------------------------------
 with tab1:
-    st.subheader("1. 비교할 별 두 개를 고르세요")
-
-    label_list = [make_star_label(row) for _, row in stars.iterrows()]
-    label_to_index = {label: i for i, label in enumerate(label_list)}
-
-    col_select_a, col_select_b = st.columns(2)
-
-    with col_select_a:
-        selected_a = st.selectbox(
-            "별 A",
-            label_list,
-            index=0
-        )
-
-    with col_select_b:
-        selected_b = st.selectbox(
-            "별 B",
-            label_list,
-            index=1 if len(label_list) > 1 else 0
-        )
-
-    idx_a = label_to_index[selected_a]
-    idx_b = label_to_index[selected_b]
-
-    star_a = stars.iloc[idx_a]
-    star_b = stars.iloc[idx_b]
-
-    if idx_a == idx_b:
-        st.warning("서로 다른 별 두 개를 골라야 비교가 더 의미 있습니다.")
-
-    st.divider()
-
-    st.subheader("2. 연주시차로 거리 확인하기")
+    st.subheader("1. 별의 실제 밝기와 거리를 직접 조작해 보세요")
 
     col_a, col_b = st.columns(2)
 
     with col_a:
-        show_star_metrics(star_a, "별 A")
+        st.markdown("### 🟡 별 A")
+        st.select_slider(
+            "별 A의 거리(pc)",
+            options=DISTANCE_OPTIONS,
+            key="a_distance"
+        )
+        st.select_slider(
+            "별 A의 실제 밝기",
+            options=LUMINOSITY_OPTIONS,
+            key="a_luminosity",
+            help="1이면 태양과 비슷한 실제 밝기라고 생각합니다."
+        )
 
     with col_b:
-        show_star_metrics(star_b, "별 B")
+        st.markdown("### 🔵 별 B")
+        st.select_slider(
+            "별 B의 거리(pc)",
+            options=DISTANCE_OPTIONS,
+            key="b_distance"
+        )
+        st.select_slider(
+            "별 B의 실제 밝기",
+            options=LUMINOSITY_OPTIONS,
+            key="b_luminosity",
+            help="1이면 태양과 비슷한 실제 밝기라고 생각합니다."
+        )
 
-    st.markdown(
-        """
-        <div class="key-box">
-        <b>핵심 개념 ① 연주시차</b><br>
-        연주시차가 클수록 별은 더 가깝습니다.<br>
-        이 앱에서는 거리(pc)를 <b>1000 ÷ 연주시차(mas)</b>로 계산합니다.
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    star_a = make_star_data(st.session_state.a_distance, st.session_state.a_luminosity)
+    star_b = make_star_data(st.session_state.b_distance, st.session_state.b_luminosity)
 
     st.divider()
 
-    st.subheader("3. 겉보기 밝기와 실제 밝기 비교하기")
+    c1, c2, c3 = st.columns([1, 1, 2])
 
-    apparent_winner, apparent_ratio, apparent_text = compare_magnitude(
-        star_a["phot_g_mean_mag"],
-        star_b["phot_g_mean_mag"],
+    with c1:
+        if st.button("👀 지구에서 보기", use_container_width=True):
+            st.session_state.view_mode = "apparent"
+
+    with c2:
+        if st.button("🚀 10 pc로 옮겨 보기", use_container_width=True):
+            st.session_state.view_mode = "absolute"
+
+    with c3:
+        st.info(
+            "먼저 지구에서 본 뒤, 10 pc로 옮겨 보세요. "
+            "겉보기 등급과 절대등급의 차이가 훨씬 직관적으로 보입니다."
+        )
+
+    render_space_scene(star_a, star_b, st.session_state.view_mode)
+
+    st.divider()
+
+    st.subheader("2. 계산값 확인하기")
+
+    result_col1, result_col2 = st.columns(2)
+
+    with result_col1:
+        st.markdown("### 🟡 별 A")
+        st.metric("거리", f"{star_a['distance']} pc")
+        st.metric("연주시차", f"{star_a['parallax']:.1f} mas")
+        st.metric("겉보기 등급", f"{star_a['apparent_mag']:.2f}")
+        st.metric("절대등급", f"{star_a['absolute_mag']:.2f}")
+
+    with result_col2:
+        st.markdown("### 🔵 별 B")
+        st.metric("거리", f"{star_b['distance']} pc")
+        st.metric("연주시차", f"{star_b['parallax']:.1f} mas")
+        st.metric("겉보기 등급", f"{star_b['apparent_mag']:.2f}")
+        st.metric("절대등급", f"{star_b['absolute_mag']:.2f}")
+
+    apparent_winner, apparent_text = compare_mag(
+        star_a["apparent_mag"],
+        star_b["apparent_mag"],
         "별 A",
         "별 B"
     )
 
-    intrinsic_winner, intrinsic_ratio, intrinsic_text = compare_magnitude(
-        star_a["absolute_g_mag"],
-        star_b["absolute_g_mag"],
+    absolute_winner, absolute_text = compare_mag(
+        star_a["absolute_mag"],
+        star_b["absolute_mag"],
         "별 A",
         "별 B"
     )
 
-    col_result_1, col_result_2 = st.columns(2)
-
-    with col_result_1:
-        st.markdown("#### 👀 겉보기 등급 비교")
-        st.write(f"별 A의 겉보기 등급 G: **{star_a['phot_g_mean_mag']:.2f}**")
-        st.write(f"별 B의 겉보기 등급 G: **{star_b['phot_g_mean_mag']:.2f}**")
-        st.info(apparent_text)
-
-    with col_result_2:
-        st.markdown("#### 💡 절대등급 비교")
-        st.write(f"별 A의 절대등급 M_G: **{star_a['absolute_g_mag']:.2f}**")
-        st.write(f"별 B의 절대등급 M_G: **{star_b['absolute_g_mag']:.2f}**")
-        st.info(intrinsic_text)
-
-    # 밝기 지수 시각화
-    chart_df = pd.DataFrame(
-        {
-            "보이는 밝기 지수": [
-                star_a["apparent_brightness_index"],
-                star_b["apparent_brightness_index"]
-            ],
-            "10 pc에서의 밝기 지수": [
-                star_a["intrinsic_brightness_index"],
-                star_b["intrinsic_brightness_index"]
-            ]
-        },
-        index=["별 A", "별 B"]
-    )
-
-    # 값의 크기가 너무 작으므로 각 항목별 최대값을 1로 맞추어 비교한다.
-    chart_df["보이는 밝기 지수"] = chart_df["보이는 밝기 지수"] / chart_df["보이는 밝기 지수"].max()
-    chart_df["10 pc에서의 밝기 지수"] = chart_df["10 pc에서의 밝기 지수"] / chart_df["10 pc에서의 밝기 지수"].max()
-
-    st.markdown("#### 📊 밝기 지수 비교")
-    st.caption("각 항목에서 더 밝은 별을 1로 맞춘 상대 비교 그래프입니다.")
-    st.bar_chart(chart_df)
-
     st.divider()
 
-    st.subheader("4. 결론 만들기")
+    st.subheader("3. 해석하기")
 
-    if apparent_winner != intrinsic_winner and apparent_winner != "거의 같음" and intrinsic_winner != "거의 같음":
-        st.markdown(
-            f"""
-            <div class="result-box">
-            <b>핵심 발견</b><br>
-            겉보기로는 <b>{apparent_winner}</b>가 더 밝지만,
-            절대등급으로 비교하면 <b>{intrinsic_winner}</b>가 더 밝습니다.<br><br>
-            즉, <b>가깝기 때문에 밝게 보이는 별</b>과
-            <b>실제로 많은 빛을 내는 별</b>은 다를 수 있습니다.
-            </div>
-            """,
-            unsafe_allow_html=True
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.markdown("### 👀 겉보기 등급")
+        st.write(apparent_text)
+        st.caption("겉보기 등급은 지구에서 보이는 밝기입니다.")
+
+    with col_right:
+        st.markdown("### 💡 절대등급")
+        st.write(absolute_text)
+        st.caption("절대등급은 별을 10 pc에 두었다고 생각했을 때의 등급입니다.")
+
+    if apparent_winner != absolute_winner and apparent_winner != "거의 같음" and absolute_winner != "거의 같음":
+        st.success(
+            f"핵심 발견: 겉보기로는 {apparent_winner}가 더 밝지만, "
+            f"10 pc에서 비교하면 {absolute_winner}가 더 밝습니다. "
+            "즉, 보이는 밝기와 실제 밝기는 다를 수 있습니다."
         )
     else:
-        st.markdown(
-            f"""
-            <div class="result-box">
-            <b>이번 비교의 해석</b><br>
-            이번에 고른 두 별은 겉보기 등급과 절대등급의 밝기 순서가 크게 뒤바뀌지는 않았습니다.<br>
-            하지만 두 비교는 의미가 다릅니다.<br><br>
-            <b>겉보기 등급</b>은 지구에서 보이는 밝기이고,
-            <b>절대등급</b>은 별을 모두 같은 거리인 10 pc에 두었다고 생각했을 때의 밝기입니다.
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.warning(
+            "이번 설정에서는 겉보기 밝기 순서와 실제 밝기 순서가 크게 뒤집히지 않았습니다. "
+            "거리와 실제 밝기를 더 극단적으로 바꿔 보세요."
         )
 
-    st.markdown("#### ✍️ 학생 탐구 질문")
-    st.write("1. 연주시차가 큰 별은 왜 더 가까운 별이라고 할 수 있을까?")
-    st.write("2. 겉보기 등급의 숫자가 작다는 것은 무슨 뜻일까?")
-    st.write("3. 절대등급은 왜 별을 10 pc에 둔다고 가정할까?")
-    st.write("4. 가까워서 밝게 보이는 별과 실제로 밝은 별을 어떻게 구별할 수 있을까?")
-
 
 # ------------------------------------------------------------
-# 탭 2: 개념 정리
+# 탭 2: 미션 활동
 # ------------------------------------------------------------
 with tab2:
-    st.subheader("📘 핵심 개념 정리")
+    st.subheader("🎯 학생 미션")
 
     st.markdown(
         """
-        ### 1. 연주시차
+        ### 미션 1. 가까워서 밝게 보이는 별 만들기
+        - 별 A의 실제 밝기를 작게 만든다.
+        - 별 A의 거리를 아주 가깝게 만든다.
+        - 별 A가 실제로는 어두운데도 지구에서는 밝게 보이는지 확인한다.
 
-        지구가 태양 주위를 공전하기 때문에, 가까운 별은 6개월 간격으로 보았을 때
-        배경의 먼 별들에 비해 위치가 아주 조금 달라져 보입니다.
+        ### 미션 2. 멀지만 실제로 매우 밝은 별 만들기
+        - 별 B의 실제 밝기를 크게 만든다.
+        - 별 B의 거리를 멀게 만든다.
+        - 지구에서는 생각보다 어둡게 보일 수 있는지 확인한다.
 
-        이때 생기는 작은 각도를 **연주시차**라고 합니다.
+        ### 미션 3. 밝기 순서 뒤집기
+        아래 문장이 나오도록 조작해 보세요.
 
-        - 연주시차가 크다 → 별이 가깝다
-        - 연주시차가 작다 → 별이 멀다
+        > 겉보기로는 별 A가 더 밝지만, 절대등급으로는 별 B가 더 밝다.
 
-        이 앱에서는 Gaia 자료의 연주시차 단위가 mas이므로 다음처럼 계산합니다.
+        또는 반대로,
 
-        **거리(pc) = 1000 ÷ 연주시차(mas)**
-
-        ---
-        ### 2. 겉보기 등급
-
-        **겉보기 등급**은 지구에서 보이는 별의 밝기를 등급으로 나타낸 값입니다.
-
-        중요한 점은 등급 숫자가 작을수록 더 밝다는 것입니다.
-
-        - G = 3인 별은 G = 8인 별보다 밝게 보입니다.
-        - 별이 실제로 밝아서 밝게 보일 수도 있고,
-        - 단순히 가까워서 밝게 보일 수도 있습니다.
-
-        ---
-        ### 3. 절대등급
-
-        **절대등급**은 별을 모두 같은 거리인 10 pc에 두었다고 생각했을 때의 등급입니다.
-
-        그래서 절대등급은 별 자체가 얼마나 밝은지 비교할 때 사용합니다.
-
-        - 절대등급 숫자가 작다 → 실제로 더 밝은 별
-        - 절대등급 숫자가 크다 → 실제로 더 어두운 별
-
-        ---
-        ### 4. 이 앱의 핵심 문장
-
-        **보이는 밝기와 실제 밝기는 다를 수 있다.**
-
-        어떤 별은 실제로는 어둡지만 가까워서 밝게 보일 수 있습니다.  
-        반대로 어떤 별은 실제로는 매우 밝지만 멀리 있어서 어둡게 보일 수 있습니다.
+        > 겉보기로는 별 B가 더 밝지만, 절대등급으로는 별 A가 더 밝다.
         """
+    )
+
+    st.divider()
+
+    st.subheader("✍️ 학생 기록 문장")
+
+    st.markdown(
+        """
+        학생들에게 아래 문장을 완성하게 하면 좋습니다.
+
+        1. 연주시차가 큰 별은 거리가 ________ 별이다.
+        2. 겉보기 등급은 ________에서 보이는 밝기를 나타낸다.
+        3. 절대등급은 별을 모두 ________ pc에 두었다고 생각했을 때의 밝기이다.
+        4. 별이 밝게 보인다고 해서 반드시 실제로 밝은 것은 아니다. 왜냐하면 ________ 때문이다.
+        """
+    )
+
+    st.info(
+        "수업에서는 수식보다 먼저 화면 조작을 시키는 것이 좋습니다. "
+        "학생이 먼저 '가까우면 밝게 보인다'를 발견한 뒤, 그다음 절대등급을 설명하면 이해가 훨씬 쉽습니다."
     )
 
 
 # ------------------------------------------------------------
-# 탭 3: Gaia 데이터 보기
+# 탭 3: 실제 Gaia 자료
 # ------------------------------------------------------------
 with tab3:
-    st.subheader("📊 불러온 Gaia 별 후보 데이터")
-
-    display_df = stars[
-        [
-            "star_no",
-            "source_id",
-            "ra",
-            "dec",
-            "parallax",
-            "parallax_error",
-            "distance_pc",
-            "distance_ly",
-            "phot_g_mean_mag",
-            "absolute_g_mag",
-            "bp_rp"
-        ]
-    ].copy()
-
-    display_df = display_df.rename(
-        columns={
-            "star_no": "번호",
-            "source_id": "Gaia source_id",
-            "ra": "적경 RA",
-            "dec": "적위 Dec",
-            "parallax": "연주시차(mas)",
-            "parallax_error": "연주시차 오차",
-            "distance_pc": "거리(pc)",
-            "distance_ly": "거리(광년)",
-            "phot_g_mean_mag": "겉보기 등급 G",
-            "absolute_g_mag": "절대등급 M_G",
-            "bp_rp": "색지수 BP-RP"
-        }
-    )
-
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.subheader("🔭 실제 Gaia 자료로 확인하기")
 
     st.markdown(
         """
-        <div class="sub-box">
-        <b>수업 활용 팁</b><br>
-        학생들에게 먼저 겉보기 등급만 보고 더 밝은 별을 고르게 한 뒤,
-        연주시차로 거리를 계산하고 절대등급을 비교하게 하면 좋습니다.<br>
-        마지막에는 “처음 예상이 바뀌었는가?”를 쓰게 하면 탐구 흐름이 자연스럽습니다.
-        </div>
-        """,
-        unsafe_allow_html=True
+        이 탭은 실제 별 자료를 확인하는 보조 활동입니다.  
+        처음부터 실제 데이터로 들어가면 개념이 흐려질 수 있으므로, 먼저 조작 실험실에서 개념을 잡은 뒤 사용하세요.
+        """
     )
+
+    try:
+        with st.spinner("Gaia Archive에서 별 자료를 불러오는 중입니다..."):
+            gaia_df = load_gaia_data()
+
+        st.success(f"Gaia 실제 별 자료 {len(gaia_df)}개를 불러왔습니다.")
+
+        def gaia_label(row):
+            return (
+                f"{int(row['번호'])}번 | Gaia {int(row['source_id'])} | "
+                f"거리 {row['distance_pc']:.1f} pc | "
+                f"겉보기 G {row['phot_g_mean_mag']:.2f} | "
+                f"절대 G {row['absolute_g_mag']:.2f}"
+            )
+
+        labels = [gaia_label(row) for _, row in gaia_df.iterrows()]
+        label_to_idx = {label: i for i, label in enumerate(labels)}
+
+        gcol1, gcol2 = st.columns(2)
+
+        with gcol1:
+            selected_gaia_a = st.selectbox("실제 별 A", labels, index=0)
+
+        with gcol2:
+            selected_gaia_b = st.selectbox("실제 별 B", labels, index=1)
+
+        gaia_a = gaia_df.iloc[label_to_idx[selected_gaia_a]]
+        gaia_b = gaia_df.iloc[label_to_idx[selected_gaia_b]]
+
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "구분": "실제 별 A",
+                        "Gaia source_id": int(gaia_a["source_id"]),
+                        "연주시차(mas)": round(gaia_a["parallax"], 3),
+                        "거리(pc)": round(gaia_a["distance_pc"], 2),
+                        "겉보기 등급 G": round(gaia_a["phot_g_mean_mag"], 2),
+                        "절대등급 G": round(gaia_a["absolute_g_mag"], 2),
+                    },
+                    {
+                        "구분": "실제 별 B",
+                        "Gaia source_id": int(gaia_b["source_id"]),
+                        "연주시차(mas)": round(gaia_b["parallax"], 3),
+                        "거리(pc)": round(gaia_b["distance_pc"], 2),
+                        "겉보기 등급 G": round(gaia_b["phot_g_mean_mag"], 2),
+                        "절대등급 G": round(gaia_b["absolute_g_mag"], 2),
+                    }
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        gaia_app_winner, gaia_app_text = compare_mag(
+            gaia_a["phot_g_mean_mag"],
+            gaia_b["phot_g_mean_mag"],
+            "실제 별 A",
+            "실제 별 B"
+        )
+
+        gaia_abs_winner, gaia_abs_text = compare_mag(
+            gaia_a["absolute_g_mag"],
+            gaia_b["absolute_g_mag"],
+            "실제 별 A",
+            "실제 별 B"
+        )
+
+        st.write("👀 겉보기 등급 비교:", gaia_app_text)
+        st.write("💡 절대등급 비교:", gaia_abs_text)
+
+        if st.button("선택한 Gaia 별을 조작 실험실로 가져오기"):
+            st.session_state.a_distance = nearest_value(DISTANCE_OPTIONS, float(gaia_a["distance_pc"]))
+            st.session_state.b_distance = nearest_value(DISTANCE_OPTIONS, float(gaia_b["distance_pc"]))
+
+            st.session_state.a_luminosity = nearest_value(
+                LUMINOSITY_OPTIONS,
+                float(gaia_a["luminosity_like"])
+            )
+            st.session_state.b_luminosity = nearest_value(
+                LUMINOSITY_OPTIONS,
+                float(gaia_b["luminosity_like"])
+            )
+
+            st.session_state.view_mode = "apparent"
+            st.rerun()
+
+    except Exception as e:
+        st.error("Gaia Archive 자료를 불러오지 못했습니다.")
+        st.code(str(e))
+        st.info(
+            "인터넷 연결 또는 Gaia 서버 상태에 따라 일시적으로 실패할 수 있습니다. "
+            "그래도 조작 실험실 탭은 Gaia 연결 없이 사용할 수 있습니다."
+        )
