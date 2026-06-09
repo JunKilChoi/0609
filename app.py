@@ -1,41 +1,46 @@
 # app.py
-# 중학교 2학년 과학: 겉보기 등급과 절대등급을 직관적으로 배우는 앱
-# 핵심 활동: 별의 실제 밝기와 거리를 조작하고, 10 pc 위치로 옮겨 절대등급을 확인한다.
-# 선택 활동: Gaia Archive TAP API에서 실제 별 자료를 불러와 확인한다.
+# 중학교 2학년 과학: 겉보기 등급, 절대등급, 연주시차 시각화 앱
+# Streamlit Cloud에서 바로 실행 가능
+# 핵심: 별의 실제 밝기와 거리를 조작하고, 지구에서 보이는 밝기와 10 pc 기준 밝기를 비교한다.
 
 import io
+import json
 import math
 import requests
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 # ------------------------------------------------------------
 # 기본 설정
 # ------------------------------------------------------------
 st.set_page_config(
-    page_title="보이는 밝기와 실제 밝기",
+    page_title="별의 밝기와 연주시차 시뮬레이터",
     page_icon="⭐",
     layout="wide"
 )
 
 GAIA_TAP_SYNC_URL = "https://gea.esac.esa.int/tap-server/tap/sync"
-M_SUN = 4.83  # 태양의 절대등급에 가까운 참고값. 수업용 기준값으로 사용.
+
+# 태양의 절대등급에 가까운 값. 수업용 기준값으로 사용.
+M_SUN = 4.83
+
+LUMINOSITY_OPTIONS = [
+    0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000
+]
 
 
 # ------------------------------------------------------------
-# 세션 상태 기본값
+# 세션 상태 초기화
 # ------------------------------------------------------------
-DISTANCE_OPTIONS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 150, 200, 300, 500, 700, 1000]
-LUMINOSITY_OPTIONS = [0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000]
-
 DEFAULTS = {
-    "a_distance": 5,
+    "a_distance": 5.0,
     "a_luminosity": 0.3,
-    "b_distance": 100,
-    "b_luminosity": 100,
-    "view_mode": "apparent"
+    "b_distance": 120.0,
+    "b_luminosity": 300.0,
+    "view_mode": "지구에서 보기",
 }
 
 for key, value in DEFAULTS.items():
@@ -46,20 +51,10 @@ for key, value in DEFAULTS.items():
 # ------------------------------------------------------------
 # 계산 함수
 # ------------------------------------------------------------
-def nearest_value(options, value):
-    """주어진 값과 가장 가까운 선택지 값을 반환한다."""
-    return min(options, key=lambda x: abs(x - value))
-
-
-def parallax_mas(distance_pc):
-    """거리 pc를 연주시차 mas로 바꾼다."""
-    return 1000 / distance_pc
-
-
 def absolute_magnitude(luminosity):
     """
-    실제 밝기 비율을 절대등급으로 바꾼다.
-    luminosity = 1이면 태양과 비슷한 실제 밝기라고 생각한다.
+    실제 밝기를 절대등급으로 변환한다.
+    luminosity = 1이면 태양과 비슷한 실제 밝기라고 둔다.
     """
     return M_SUN - 2.5 * math.log10(luminosity)
 
@@ -67,25 +62,46 @@ def absolute_magnitude(luminosity):
 def apparent_magnitude(abs_mag, distance_pc):
     """
     절대등급과 거리로 겉보기 등급을 계산한다.
-    거리가 10 pc이면 겉보기 등급 = 절대등급이다.
+    거리 10 pc에서는 겉보기 등급과 절대등급이 같다.
     """
     return abs_mag + 5 * math.log10(distance_pc / 10)
 
 
-def brightness_ratio_from_mag(mag1, mag2):
-    """등급 차이를 밝기 비율로 바꾼다."""
+def parallax_mas(distance_pc):
+    """
+    거리 pc를 연주시차 mas로 바꾼다.
+    1 pc에서 연주시차는 1초각 = 1000 mas.
+    """
+    return 1000 / distance_pc
+
+
+def make_star(distance_pc, luminosity):
+    """별 하나의 수업용 계산값을 정리한다."""
+    abs_mag = absolute_magnitude(luminosity)
+    app_mag = apparent_magnitude(abs_mag, distance_pc)
+
+    return {
+        "distance": float(distance_pc),
+        "luminosity": float(luminosity),
+        "absolute_mag": abs_mag,
+        "apparent_mag": app_mag,
+        "parallax_mas": parallax_mas(distance_pc),
+        "apparent_flux": luminosity / (distance_pc ** 2),
+        "absolute_flux": luminosity / (10 ** 2),
+    }
+
+
+def mag_ratio(mag1, mag2):
+    """등급 차이를 밝기 비율로 변환한다."""
     return 10 ** (abs(mag1 - mag2) / 2.5)
 
 
 def compare_mag(mag_a, mag_b, name_a="별 A", name_b="별 B"):
-    """
-    등급 숫자가 작을수록 밝다.
-    어느 별이 더 밝은지 설명 문장을 만든다.
-    """
+    """등급은 숫자가 작을수록 밝다."""
     if abs(mag_a - mag_b) < 0.05:
         return "거의 같음", f"{name_a}와 {name_b}의 밝기는 거의 비슷합니다."
 
-    ratio = brightness_ratio_from_mag(mag_a, mag_b)
+    ratio = mag_ratio(mag_a, mag_b)
 
     if mag_a < mag_b:
         return name_a, f"{name_a}가 {name_b}보다 약 {ratio:.1f}배 밝습니다."
@@ -93,294 +109,548 @@ def compare_mag(mag_a, mag_b, name_a="별 A", name_b="별 B"):
         return name_b, f"{name_b}가 {name_a}보다 약 {ratio:.1f}배 밝습니다."
 
 
-def log_position(distance_pc):
+def nearest_value(options, value):
+    """선택지 중 가장 가까운 값을 찾는다."""
+    return min(options, key=lambda x: abs(x - value))
+
+
+def set_preset(a_distance, a_luminosity, b_distance, b_luminosity, mode="지구에서 보기"):
+    """버튼으로 실험 조건을 빠르게 바꾼다."""
+    st.session_state.a_distance = float(a_distance)
+    st.session_state.a_luminosity = float(a_luminosity)
+    st.session_state.b_distance = float(b_distance)
+    st.session_state.b_luminosity = float(b_luminosity)
+    st.session_state.view_mode = mode
+
+
+# ------------------------------------------------------------
+# 고급 애니메이션 HTML 생성
+# ------------------------------------------------------------
+def render_animation(star_a, star_b, view_mode):
     """
-    화면에서 별의 가로 위치를 정한다.
-    거리는 1~1000 pc 범위에서 로그 스케일처럼 배치한다.
+    HTML Canvas 기반 실시간 애니메이션을 Streamlit에 삽입한다.
+    - 큰 화면: 지구와 별의 거리
+    - 오른쪽 위: 연주시차 왕복 애니메이션
+    - 오른쪽 아래: 지상 관측창과 10 pc 비교창
     """
-    distance_pc = max(1, min(1000, distance_pc))
-    return 8 + 84 * (math.log10(distance_pc) / 3)
 
-
-def visual_style(flux, max_flux):
-    """
-    밝기 값을 화면에서 보일 별 크기와 빛 번짐으로 바꾼다.
-    flux가 매우 작아도 별이 완전히 사라지지 않도록 최소 크기를 둔다.
-    """
-    if max_flux <= 0:
-        ratio = 0.1
-    else:
-        ratio = math.sqrt(max(flux / max_flux, 0.001))
-
-    size = 22 + 62 * ratio
-    glow = 8 + 36 * ratio
-    opacity = 0.35 + 0.65 * ratio
-
-    return size, glow, opacity
-
-
-def make_star_data(distance, luminosity):
-    """별 하나의 수업용 물리량을 딕셔너리로 정리한다."""
-    M = absolute_magnitude(luminosity)
-    m = apparent_magnitude(M, distance)
-
-    return {
-        "distance": distance,
-        "luminosity": luminosity,
-        "parallax": parallax_mas(distance),
-        "absolute_mag": M,
-        "apparent_mag": m,
-        "apparent_flux": luminosity / (distance ** 2),
-        "absolute_flux": luminosity / (10 ** 2),
+    params = {
+        "mode": view_mode,
+        "a": star_a,
+        "b": star_b,
     }
 
+    html = r"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Noto Sans KR", "Segoe UI", sans-serif;
+}
 
-# ------------------------------------------------------------
-# CSS 애니메이션 장면 만들기
-# ------------------------------------------------------------
-def render_space_scene(star_a, star_b, mode):
-    """
-    별이 지구에서 떨어진 위치에 있을 때와,
-    두 별을 10 pc 위치로 옮겼을 때를 CSS 애니메이션으로 보여준다.
-    """
+.sim-shell {
+    width: 100%;
+    height: 720px;
+    border-radius: 28px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(96,165,250,0.25), transparent 20%),
+        radial-gradient(circle at 80% 10%, rgba(168,85,247,0.22), transparent 24%),
+        linear-gradient(135deg, #020617 0%, #111827 45%, #1e1b4b 100%);
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.35);
+    position: relative;
+}
 
-    pos_a = log_position(star_a["distance"])
-    pos_b = log_position(star_b["distance"])
-    pos_10 = log_position(10)
+#canvas {
+    width: 100%;
+    height: 720px;
+    display: block;
+}
 
-    if mode == "absolute":
-        flux_a = star_a["absolute_flux"]
-        flux_b = star_b["absolute_flux"]
-        title = "🚀 절대등급 모드: 두 별을 모두 10 pc 위치로 옮기는 중"
-        sub = "거리 조건을 같게 만들면, 별 자체가 얼마나 밝은지 비교할 수 있습니다."
-        animation_a = f"moveA 2.3s ease-in-out forwards"
-        animation_b = f"moveB 2.3s ease-in-out forwards"
-        final_label = "10 pc 기준"
-    else:
-        flux_a = star_a["apparent_flux"]
-        flux_b = star_b["apparent_flux"]
-        title = "👀 겉보기 모드: 지구에서 바라본 별"
-        sub = "가까운 별은 실제로 어두워도 밝게 보일 수 있습니다."
-        animation_a = "none"
-        animation_b = "none"
-        final_label = "현재 거리"
+.badge {
+    position: absolute;
+    left: 24px;
+    top: 22px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    color: #e0f2fe;
+    background: rgba(15,23,42,0.65);
+    border: 1px solid rgba(255,255,255,0.16);
+    font-size: 14px;
+    font-weight: 800;
+    backdrop-filter: blur(12px);
+}
 
-    max_flux = max(flux_a, flux_b)
-    size_a, glow_a, opacity_a = visual_style(flux_a, max_flux)
-    size_b, glow_b, opacity_b = visual_style(flux_b, max_flux)
+.tip {
+    position: absolute;
+    left: 24px;
+    bottom: 22px;
+    max-width: 680px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    color: #dbeafe;
+    background: rgba(15,23,42,0.68);
+    border: 1px solid rgba(255,255,255,0.16);
+    font-size: 15px;
+    line-height: 1.5;
+    backdrop-filter: blur(12px);
+}
+</style>
+</head>
 
-    html = f"""
-    <style>
-    .space-wrap {{
-        width: 100%;
-        min-height: 440px;
-        border-radius: 28px;
-        background:
-            radial-gradient(circle at 20% 20%, rgba(255,255,255,0.22), transparent 2px),
-            radial-gradient(circle at 80% 25%, rgba(255,255,255,0.18), transparent 2px),
-            radial-gradient(circle at 50% 70%, rgba(255,255,255,0.16), transparent 2px),
-            linear-gradient(135deg, #090a2a 0%, #12194a 45%, #241145 100%);
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
-        color: white;
-        font-family: 'Noto Sans KR', sans-serif;
-    }}
-
-    .scene-title {{
-        position: absolute;
-        top: 22px;
-        left: 28px;
-        font-size: 24px;
-        font-weight: 900;
-    }}
-
-    .scene-sub {{
-        position: absolute;
-        top: 60px;
-        left: 30px;
-        font-size: 15px;
-        color: #dbeafe;
-    }}
-
-    .earth {{
-        position: absolute;
-        left: 4%;
-        top: 53%;
-        transform: translate(-50%, -50%);
-        font-size: 46px;
-        text-align: center;
-        filter: drop-shadow(0 0 12px #60a5fa);
-    }}
-
-    .earth span {{
-        display: block;
-        font-size: 13px;
-        margin-top: 6px;
-        color: #bfdbfe;
-        font-weight: 700;
-    }}
-
-    .track {{
-        position: absolute;
-        left: 6%;
-        right: 5%;
-        top: 52%;
-        height: 3px;
-        background: linear-gradient(90deg, rgba(147,197,253,0.65), rgba(255,255,255,0.1));
-        border-radius: 999px;
-    }}
-
-    .marker10 {{
-        position: absolute;
-        left: {pos_10}%;
-        top: 22%;
-        height: 64%;
-        width: 2px;
-        border-left: 2px dashed rgba(251, 191, 36, 0.9);
-    }}
-
-    .marker10-label {{
-        position: absolute;
-        left: {pos_10}%;
-        top: 18%;
-        transform: translateX(-50%);
-        background: rgba(251, 191, 36, 0.18);
-        border: 1px solid rgba(251, 191, 36, 0.75);
-        color: #fde68a;
-        padding: 7px 11px;
-        border-radius: 999px;
-        font-size: 13px;
-        font-weight: 800;
-        white-space: nowrap;
-    }}
-
-    .star {{
-        position: absolute;
-        transform: translate(-50%, -50%);
-        line-height: 1;
-        font-weight: 900;
-        z-index: 5;
-    }}
-
-    .star-a {{
-        left: {pos_a}%;
-        top: 41%;
-        font-size: {size_a}px;
-        color: #fef3c7;
-        opacity: {opacity_a};
-        text-shadow: 0 0 {glow_a}px #facc15, 0 0 {glow_a * 1.8}px #fb923c;
-        animation: {animation_a};
-    }}
-
-    .star-b {{
-        left: {pos_b}%;
-        top: 67%;
-        font-size: {size_b}px;
-        color: #dbeafe;
-        opacity: {opacity_b};
-        text-shadow: 0 0 {glow_b}px #60a5fa, 0 0 {glow_b * 1.8}px #818cf8;
-        animation: {animation_b};
-    }}
-
-    .star-label {{
-        position: absolute;
-        transform: translate(-50%, -50%);
-        font-size: 13px;
-        font-weight: 800;
-        background: rgba(15,23,42,0.72);
-        border: 1px solid rgba(255,255,255,0.25);
-        padding: 5px 9px;
-        border-radius: 999px;
-        white-space: nowrap;
-    }}
-
-    .label-a {{
-        left: {pos_a}%;
-        top: 30%;
-        animation: {"labelMoveA 2.3s ease-in-out forwards" if mode == "absolute" else "none"};
-    }}
-
-    .label-b {{
-        left: {pos_b}%;
-        top: 78%;
-        animation: {"labelMoveB 2.3s ease-in-out forwards" if mode == "absolute" else "none"};
-    }}
-
-    .bottom-note {{
-        position: absolute;
-        left: 24px;
-        right: 24px;
-        bottom: 20px;
-        background: rgba(15, 23, 42, 0.65);
-        border: 1px solid rgba(255,255,255,0.16);
-        border-radius: 18px;
-        padding: 13px 16px;
-        font-size: 15px;
-        color: #e0f2fe;
-    }}
-
-    @keyframes moveA {{
-        0% {{ left: {pos_a}%; transform: translate(-50%, -50%) scale(0.75); }}
-        65% {{ transform: translate(-50%, -50%) scale(1.2); }}
-        100% {{ left: {pos_10}%; transform: translate(-50%, -50%) scale(1); }}
-    }}
-
-    @keyframes moveB {{
-        0% {{ left: {pos_b}%; transform: translate(-50%, -50%) scale(0.75); }}
-        65% {{ transform: translate(-50%, -50%) scale(1.2); }}
-        100% {{ left: {pos_10}%; transform: translate(-50%, -50%) scale(1); }}
-    }}
-
-    @keyframes labelMoveA {{
-        0% {{ left: {pos_a}%; }}
-        100% {{ left: {pos_10}%; }}
-    }}
-
-    @keyframes labelMoveB {{
-        0% {{ left: {pos_b}%; }}
-        100% {{ left: {pos_10}%; }}
-    }}
-    </style>
-
-    <div class="space-wrap">
-        <div class="scene-title">{title}</div>
-        <div class="scene-sub">{sub}</div>
-
-        <div class="track"></div>
-        <div class="earth">🌍<span>지구</span></div>
-
-        <div class="marker10"></div>
-        <div class="marker10-label">10 pc 위치<br>{final_label}</div>
-
-        <div class="star star-a">★</div>
-        <div class="star star-b">★</div>
-
-        <div class="star-label label-a">별 A</div>
-        <div class="star-label label-b">별 B</div>
-
-        <div class="bottom-note">
-            겉보기 등급은 <b>지구에서 보이는 밝기</b>입니다.
-            절대등급은 별을 모두 <b>10 pc 위치에 둔다고 가정했을 때의 밝기</b>입니다.
-        </div>
+<body>
+<div class="sim-shell">
+    <div class="badge" id="modeBadge"></div>
+    <canvas id="canvas"></canvas>
+    <div class="tip">
+        <b>관찰 포인트</b> · 가까운 별은 실제로 어두워도 밝게 보일 수 있습니다.
+        반대로 실제로 매우 밝은 별도 멀리 있으면 어둡게 보일 수 있습니다.
+        절대등급은 두 별을 모두 <b>10 pc</b>에 놓고 비교하는 생각 실험입니다.
     </div>
-    """
+</div>
 
-    st.html(html)
+<script>
+const P = __PARAMS__;
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const badge = document.getElementById("modeBadge");
+
+let W = 1200;
+let H = 720;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+const bgStars = Array.from({length: 130}, (_, i) => ({
+    x: Math.random(),
+    y: Math.random(),
+    r: 0.5 + Math.random() * 1.6,
+    tw: Math.random() * Math.PI * 2,
+    speed: 0.7 + Math.random() * 1.4
+}));
+
+function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function smoothstep(t) {
+    t = clamp(t, 0, 1);
+    return t * t * (3 - 2 * t);
+}
+
+function distanceToX(distance) {
+    // 1 pc ~ 500 pc를 로그 스케일로 배치한다.
+    const d = clamp(distance, 1, 500);
+    const left = 80;
+    const right = W * 0.62;
+    const ratio = Math.log10(d) / Math.log10(500);
+    return left + (right - left) * ratio;
+}
+
+function drawRoundRect(x, y, w, h, r, fill, stroke = null) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+}
+
+function drawText(text, x, y, size = 14, color = "#e5e7eb", weight = "500", align = "left") {
+    ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Noto Sans KR", Segoe UI, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+}
+
+function drawStarShape(x, y, outerR, innerR, points, fill, glow, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = outerR * 1.25;
+    ctx.beginPath();
+
+    for (let i = 0; i < points * 2; i++) {
+        const angle = -Math.PI / 2 + i * Math.PI / points;
+        const r = i % 2 === 0 ? outerR : innerR;
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.restore();
+
+    // 중심부
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = outerR * 2.4;
+    ctx.beginPath();
+    ctx.arc(x, y, outerR * 0.24, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.restore();
+}
+
+function visualRadius(flux, maxFlux) {
+    const ratio = Math.sqrt(clamp(flux / maxFlux, 0.0005, 1));
+    return 9 + 34 * ratio;
+}
+
+function drawEarth(x, y) {
+    const g = ctx.createRadialGradient(x - 10, y - 12, 5, x, y, 38);
+    g.addColorStop(0, "#bfdbfe");
+    g.addColorStop(0.35, "#3b82f6");
+    g.addColorStop(0.7, "#2563eb");
+    g.addColorStop(1, "#0f172a");
+
+    ctx.save();
+    ctx.shadowColor = "#60a5fa";
+    ctx.shadowBlur = 28;
+    ctx.beginPath();
+    ctx.arc(x, y, 38, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(x - 8, y - 5, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(34,197,94,0.75)";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x + 13, y + 11, 10, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(34,197,94,0.65)";
+    ctx.fill();
+
+    drawText("지구", x, y + 58, 15, "#bfdbfe", "800", "center");
+}
+
+function drawMainScene(t) {
+    const mode = P.mode;
+    const isAbs = mode === "10 pc로 옮겨 보기";
+
+    const earthX = 72;
+    const earthY = H * 0.52;
+    const yA = H * 0.36;
+    const yB = H * 0.61;
+    const x10 = distanceToX(10);
+
+    const xA0 = distanceToX(P.a.distance);
+    const xB0 = distanceToX(P.b.distance);
+
+    // 10 pc 모드에서는 별이 부드럽게 10 pc 위치로 이동한다.
+    const moveT = isAbs ? smoothstep(clamp((t - 0.3) / 2.1, 0, 1)) : 0;
+    const xA = lerp(xA0, x10, moveT);
+    const xB = lerp(xB0, x10, moveT);
+
+    const fluxA = isAbs ? P.a.absolute_flux : P.a.apparent_flux;
+    const fluxB = isAbs ? P.b.absolute_flux : P.b.apparent_flux;
+    const maxFlux = Math.max(fluxA, fluxB);
+    const rA = visualRadius(fluxA, maxFlux);
+    const rB = visualRadius(fluxB, maxFlux);
+
+    // 거리 선
+    ctx.strokeStyle = "rgba(191,219,254,0.28)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(earthX, earthY);
+    ctx.lineTo(W * 0.66, earthY);
+    ctx.stroke();
+
+    // 거리 눈금
+    const ticks = [1, 10, 100, 500];
+    ticks.forEach(d => {
+        const x = distanceToX(d);
+        ctx.strokeStyle = d === 10 ? "rgba(251,191,36,0.95)" : "rgba(255,255,255,0.22)";
+        ctx.lineWidth = d === 10 ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x, earthY - 100);
+        ctx.lineTo(x, earthY + 120);
+        ctx.stroke();
+
+        drawText(`${d} pc`, x, earthY + 145, 13, d === 10 ? "#fde68a" : "#bfdbfe", "700", "center");
+    });
+
+    // 10 pc 강조
+    drawRoundRect(x10 - 44, earthY - 138, 88, 30, 15, "rgba(251,191,36,0.18)", "rgba(251,191,36,0.65)");
+    drawText("10 pc 기준", x10, earthY - 123, 13, "#fde68a", "900", "center");
+
+    // 지구
+    drawEarth(earthX, earthY);
+
+    // 시선
+    ctx.setLineDash([6, 8]);
+    ctx.strokeStyle = "rgba(147,197,253,0.27)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(earthX + 35, earthY - 5);
+    ctx.lineTo(xA, yA);
+    ctx.moveTo(earthX + 35, earthY + 5);
+    ctx.lineTo(xB, yB);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 별 A, B
+    drawStarShape(xA, yA, rA, rA * 0.45, 5, "#fde68a", "#facc15", 0.98);
+    drawStarShape(xB, yB, rB, rB * 0.45, 5, "#bfdbfe", "#60a5fa", 0.98);
+
+    // 별 라벨
+    drawRoundRect(xA - 55, yA - rA - 42, 110, 30, 15, "rgba(15,23,42,0.72)", "rgba(255,255,255,0.16)");
+    drawText("별 A", xA, yA - rA - 27, 14, "#fde68a", "900", "center");
+
+    drawRoundRect(xB - 55, yB + rB + 12, 110, 30, 15, "rgba(15,23,42,0.72)", "rgba(255,255,255,0.16)");
+    drawText("별 B", xB, yB + rB + 27, 14, "#bfdbfe", "900", "center");
+
+    // 큰 제목
+    const title = isAbs
+        ? "절대등급 모드 · 두 별을 같은 거리 10 pc에 놓고 비교"
+        : "겉보기 모드 · 지구에서 실제로 보이는 밝기";
+    drawText(title, 26, 70, 24, "#f8fafc", "900");
+
+    const sub = isAbs
+        ? "거리 효과를 제거하면 별 자체의 밝기 차이가 드러납니다."
+        : "가까운 별은 실제로 어두워도 밝게 보일 수 있습니다.";
+    drawText(sub, 28, 102, 15, "#cbd5e1", "600");
+
+    // 정보 카드
+    const cardX = 28;
+    const cardY = 130;
+    drawRoundRect(cardX, cardY, 295, 118, 18, "rgba(15,23,42,0.58)", "rgba(255,255,255,0.13)");
+    drawText("별 A", cardX + 20, cardY + 26, 15, "#fde68a", "900");
+    drawText(`거리 ${P.a.distance.toFixed(0)} pc · 연주시차 ${P.a.parallax_mas.toFixed(1)} mas`, cardX + 20, cardY + 55, 14, "#e2e8f0", "600");
+    drawText(`겉보기등급 ${P.a.apparent_mag.toFixed(2)} · 절대등급 ${P.a.absolute_mag.toFixed(2)}`, cardX + 20, cardY + 84, 14, "#e2e8f0", "600");
+
+    drawRoundRect(cardX, cardY + 132, 295, 118, 18, "rgba(15,23,42,0.58)", "rgba(255,255,255,0.13)");
+    drawText("별 B", cardX + 20, cardY + 158, 15, "#bfdbfe", "900");
+    drawText(`거리 ${P.b.distance.toFixed(0)} pc · 연주시차 ${P.b.parallax_mas.toFixed(1)} mas`, cardX + 20, cardY + 187, 14, "#e2e8f0", "600");
+    drawText(`겉보기등급 ${P.b.apparent_mag.toFixed(2)} · 절대등급 ${P.b.absolute_mag.toFixed(2)}`, cardX + 20, cardY + 216, 14, "#e2e8f0", "600");
+}
+
+function drawParallaxPanel(t) {
+    const x = W * 0.69;
+    const y = 42;
+    const w = W * 0.285;
+    const h = 235;
+
+    drawRoundRect(x, y, w, h, 22, "rgba(15,23,42,0.64)", "rgba(255,255,255,0.16)");
+    drawText("연주시차 애니메이션", x + 22, y + 28, 18, "#f8fafc", "900");
+    drawText("가까운 별일수록 배경별에 대해 더 크게 왕복합니다.", x + 22, y + 56, 13, "#cbd5e1", "600");
+
+    // 배경별
+    for (let i = 0; i < 36; i++) {
+        const px = x + 22 + ((i * 73) % (w - 44));
+        const py = y + 82 + ((i * 41) % (h - 110));
+        ctx.beginPath();
+        ctx.arc(px, py, 1.1, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(226,232,240,0.35)";
+        ctx.fill();
+    }
+
+    const maxP = Math.max(P.a.parallax_mas, P.b.parallax_mas);
+    const ampA = 8 + 68 * (P.a.parallax_mas / maxP);
+    const ampB = 8 + 68 * (P.b.parallax_mas / maxP);
+
+    const centerX = x + w * 0.52;
+    const yA = y + 122;
+    const yB = y + 174;
+
+    const wobble = Math.sin(t * 1.7);
+    const xa = centerX + ampA * wobble;
+    const xb = centerX + ampB * wobble;
+
+    // 중심선
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 7]);
+    ctx.beginPath();
+    ctx.moveTo(centerX, y + 88);
+    ctx.lineTo(centerX, y + h - 22);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 왕복 경로
+    ctx.strokeStyle = "rgba(250,204,21,0.28)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(centerX - ampA, yA);
+    ctx.lineTo(centerX + ampA, yA);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(96,165,250,0.28)";
+    ctx.beginPath();
+    ctx.moveTo(centerX - ampB, yB);
+    ctx.lineTo(centerX + ampB, yB);
+    ctx.stroke();
+
+    // 움직이는 별
+    drawStarShape(xa, yA, 13, 6, 5, "#fde68a", "#facc15", 1);
+    drawStarShape(xb, yB, 13, 6, 5, "#bfdbfe", "#60a5fa", 1);
+
+    drawText(`별 A · ${P.a.parallax_mas.toFixed(1)} mas`, x + 24, yA, 13, "#fde68a", "800");
+    drawText(`별 B · ${P.b.parallax_mas.toFixed(1)} mas`, x + 24, yB, 13, "#bfdbfe", "800");
+
+    drawText("※ 실제 각도보다 과장해서 표현한 모형", x + 22, y + h - 22, 12, "#94a3b8", "600");
+}
+
+function drawMiniSkyBox(title, x, y, w, h, fluxA, fluxB, label) {
+    drawRoundRect(x, y, w, h, 22, "rgba(15,23,42,0.64)", "rgba(255,255,255,0.16)");
+    drawText(title, x + 20, y + 27, 17, "#f8fafc", "900");
+    drawText(label, x + 20, y + 53, 12, "#cbd5e1", "600");
+
+    const skyX = x + 18;
+    const skyY = y + 72;
+    const skyW = w - 36;
+    const skyH = h - 92;
+
+    const g = ctx.createLinearGradient(skyX, skyY, skyX, skyY + skyH);
+    g.addColorStop(0, "#020617");
+    g.addColorStop(1, "#172554");
+    drawRoundRect(skyX, skyY, skyW, skyH, 16, g, "rgba(255,255,255,0.10)");
+
+    for (let i = 0; i < 24; i++) {
+        const px = skyX + 12 + ((i * 47) % (skyW - 24));
+        const py = skyY + 12 + ((i * 29) % (skyH - 24));
+        ctx.beginPath();
+        ctx.arc(px, py, 0.8, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        ctx.fill();
+    }
+
+    const maxF = Math.max(fluxA, fluxB);
+    const rA = visualRadius(fluxA, maxF) * 0.75;
+    const rB = visualRadius(fluxB, maxF) * 0.75;
+
+    const ax = skyX + skyW * 0.35;
+    const bx = skyX + skyW * 0.66;
+    const sy = skyY + skyH * 0.53;
+
+    drawStarShape(ax, sy, rA, rA * 0.45, 5, "#fde68a", "#facc15", 1);
+    drawStarShape(bx, sy, rB, rB * 0.45, 5, "#bfdbfe", "#60a5fa", 1);
+
+    drawText("A", ax, skyY + skyH - 18, 13, "#fde68a", "900", "center");
+    drawText("B", bx, skyY + skyH - 18, 13, "#bfdbfe", "900", "center");
+}
+
+function drawMiniPanels(t) {
+    const x = W * 0.69;
+    const y = 300;
+    const w = W * 0.285;
+    const h = 172;
+
+    drawMiniSkyBox(
+        "지상 관측 화면",
+        x,
+        y,
+        w,
+        h,
+        P.a.apparent_flux,
+        P.b.apparent_flux,
+        "현재 거리에서 지구가 보는 밝기"
+    );
+
+    drawMiniSkyBox(
+        "10 pc 비교 화면",
+        x,
+        y + 192,
+        w,
+        h,
+        P.a.absolute_flux,
+        P.b.absolute_flux,
+        "거리 조건을 같게 만든 밝기"
+    );
+}
+
+function drawBackground(t) {
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#020617");
+    grad.addColorStop(0.45, "#111827");
+    grad.addColorStop(1, "#1e1b4b");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    bgStars.forEach(s => {
+        const twinkle = 0.35 + 0.65 * Math.abs(Math.sin(t * s.speed + s.tw));
+        ctx.beginPath();
+        ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${0.18 + 0.5 * twinkle})`;
+        ctx.fill();
+    });
+}
+
+const start = performance.now();
+
+function animate(now) {
+    const t = (now - start) / 1000;
+
+    drawBackground(t);
+    drawMainScene(t);
+    drawParallaxPanel(t);
+    drawMiniPanels(t);
+
+    badge.textContent = P.mode === "10 pc로 옮겨 보기"
+        ? "🚀 절대등급 모드"
+        : "👀 겉보기 모드";
+
+    requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
+"""
+
+    html = html.replace("__PARAMS__", json.dumps(params, ensure_ascii=False))
+    components.html(html, height=720, scrolling=False)
 
 
 # ------------------------------------------------------------
-# Gaia 자료 불러오기
+# Gaia 데이터
 # ------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_gaia_data():
     """
     Gaia Archive TAP API에서 실제 별 자료를 불러온다.
-    이 앱에서는 개념 학습이 핵심이므로 너무 많은 자료를 가져오지 않는다.
+    수업용 보조 자료이므로 너무 많은 데이터를 가져오지 않는다.
     """
-
     query = """
-    SELECT TOP 80
+    SELECT TOP 100
         source_id,
         ra,
         dec,
@@ -403,30 +673,29 @@ def load_gaia_data():
         "REQUEST": "doQuery",
         "LANG": "ADQL",
         "FORMAT": "csv",
-        "QUERY": query
+        "QUERY": query,
     }
 
     response = requests.post(GAIA_TAP_SYNC_URL, data=payload, timeout=60)
     response.raise_for_status()
 
     text = response.text.strip()
-
     if text.startswith("<"):
         raise RuntimeError("Gaia Archive에서 CSV가 아닌 응답을 받았습니다.")
 
     df = pd.read_csv(io.StringIO(text))
-    df.columns = [c.lower().strip() for c in df.columns]
+    df.columns = [c.strip().lower() for c in df.columns]
 
     for col in ["ra", "dec", "parallax", "parallax_error", "phot_g_mean_mag", "bp_rp"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df.dropna(subset=["parallax", "phot_g_mean_mag"])
-    df = df[df["parallax"] > 0].copy()
+    df = df.dropna(subset=["parallax", "phot_g_mean_mag"]).copy()
+    df = df[df["parallax"] > 0]
 
     df["distance_pc"] = 1000 / df["parallax"]
     df["absolute_g_mag"] = df["phot_g_mean_mag"] + 5 - 5 * np.log10(df["distance_pc"])
 
-    # 절대등급을 태양 기준 실제 밝기 비율로 대략 변환한다.
+    # 절대등급을 태양 기준 실제 밝기 비율처럼 변환한다.
     df["luminosity_like"] = 10 ** ((M_SUN - df["absolute_g_mag"]) / 2.5)
 
     df = df.reset_index(drop=True)
@@ -436,98 +705,130 @@ def load_gaia_data():
 
 
 # ------------------------------------------------------------
-# 메인 화면
+# 화면 상단
 # ------------------------------------------------------------
-st.title("⭐ 보이는 밝기와 실제 밝기는 왜 다를까?")
-st.caption("중학교 2학년 과학 · 연주시차 · 겉보기 등급 · 절대등급 탐구")
+st.title("⭐ 별의 밝기와 연주시차 시뮬레이터")
+st.caption("중학교 2학년 과학 · 겉보기 등급 · 절대등급 · 연주시차")
 
 st.markdown(
     """
-    이 앱은 별을 직접 움직여 보는 방식으로 구성했습니다.  
-    학생은 별의 **실제 밝기**와 **거리**를 조작하고, 지구에서 보이는 밝기가 어떻게 바뀌는지 확인합니다.  
-    그다음 두 별을 모두 **10 pc 위치**로 옮겨서 절대등급의 의미를 확인합니다.
-    """
+이 앱은 별의 **거리**와 **실제 밝기**를 직접 조작하면서  
+왜 **보이는 밝기와 실제 밝기**가 달라질 수 있는지 확인하는 수업용 시뮬레이터입니다.
+"""
 )
 
-tab1, tab2, tab3 = st.tabs(["🌌 조작 실험실", "🎯 미션 활동", "🔭 실제 Gaia 자료"])
+
+# ------------------------------------------------------------
+# 프리셋 버튼
+# ------------------------------------------------------------
+st.subheader("🎬 빠른 실험 장면")
+
+p1, p2, p3, p4 = st.columns(4)
+
+with p1:
+    if st.button("가깝고 어두운 별 vs 멀고 밝은 별", use_container_width=True):
+        set_preset(5, 0.3, 120, 300, "지구에서 보기")
+        st.rerun()
+
+with p2:
+    if st.button("같은 실제 밝기, 거리만 다르게", use_container_width=True):
+        set_preset(5, 1, 100, 1, "지구에서 보기")
+        st.rerun()
+
+with p3:
+    if st.button("같은 거리, 실제 밝기만 다르게", use_container_width=True):
+        set_preset(50, 0.3, 50, 100, "지구에서 보기")
+        st.rerun()
+
+with p4:
+    if st.button("연주시차 차이 크게 보기", use_container_width=True):
+        set_preset(3, 1, 200, 30, "지구에서 보기")
+        st.rerun()
 
 
 # ------------------------------------------------------------
-# 탭 1: 조작 실험실
+# 탭 구성
+# ------------------------------------------------------------
+tab1, tab2, tab3 = st.tabs(["🌌 시뮬레이터", "📘 수업 질문", "🔭 Gaia 실제 자료"])
+
+
+# ------------------------------------------------------------
+# 탭 1: 시뮬레이터
 # ------------------------------------------------------------
 with tab1:
-    st.subheader("1. 별의 실제 밝기와 거리를 직접 조작해 보세요")
+    st.subheader("1. 별의 조건을 조작하세요")
 
-    col_a, col_b = st.columns(2)
+    c1, c2, c3 = st.columns([1, 1, 1])
 
-    with col_a:
+    with c1:
         st.markdown("### 🟡 별 A")
-        st.select_slider(
+        st.slider(
             "별 A의 거리(pc)",
-            options=DISTANCE_OPTIONS,
-            key="a_distance"
+            min_value=1.0,
+            max_value=500.0,
+            step=1.0,
+            key="a_distance",
         )
         st.select_slider(
             "별 A의 실제 밝기",
             options=LUMINOSITY_OPTIONS,
             key="a_luminosity",
-            help="1이면 태양과 비슷한 실제 밝기라고 생각합니다."
+            help="1이면 태양과 비슷한 실제 밝기라고 생각합니다.",
         )
 
-    with col_b:
+    with c2:
         st.markdown("### 🔵 별 B")
-        st.select_slider(
+        st.slider(
             "별 B의 거리(pc)",
-            options=DISTANCE_OPTIONS,
-            key="b_distance"
+            min_value=1.0,
+            max_value=500.0,
+            step=1.0,
+            key="b_distance",
         )
         st.select_slider(
             "별 B의 실제 밝기",
             options=LUMINOSITY_OPTIONS,
             key="b_luminosity",
-            help="1이면 태양과 비슷한 실제 밝기라고 생각합니다."
+            help="1이면 태양과 비슷한 실제 밝기라고 생각합니다.",
         )
-
-    star_a = make_star_data(st.session_state.a_distance, st.session_state.a_luminosity)
-    star_b = make_star_data(st.session_state.b_distance, st.session_state.b_luminosity)
-
-    st.divider()
-
-    c1, c2, c3 = st.columns([1, 1, 2])
-
-    with c1:
-        if st.button("👀 지구에서 보기", use_container_width=True):
-            st.session_state.view_mode = "apparent"
-
-    with c2:
-        if st.button("🚀 10 pc로 옮겨 보기", use_container_width=True):
-            st.session_state.view_mode = "absolute"
 
     with c3:
-        st.info(
-            "먼저 지구에서 본 뒤, 10 pc로 옮겨 보세요. "
-            "겉보기 등급과 절대등급의 차이가 훨씬 직관적으로 보입니다."
+        st.markdown("### 👁️ 관찰 모드")
+        st.radio(
+            "화면 모드",
+            ["지구에서 보기", "10 pc로 옮겨 보기"],
+            key="view_mode",
         )
 
-    render_space_scene(star_a, star_b, st.session_state.view_mode)
+        st.info(
+            "먼저 지구에서 본 다음, 10 pc로 옮겨 보세요. "
+            "겉보기 등급과 절대등급의 차이가 훨씬 잘 보입니다."
+        )
+
+    star_a = make_star(st.session_state.a_distance, st.session_state.a_luminosity)
+    star_b = make_star(st.session_state.b_distance, st.session_state.b_luminosity)
 
     st.divider()
 
-    st.subheader("2. 계산값 확인하기")
+    render_animation(star_a, star_b, st.session_state.view_mode)
 
-    result_col1, result_col2 = st.columns(2)
+    st.divider()
 
-    with result_col1:
+    st.subheader("2. 수치로 확인하기")
+
+    m1, m2 = st.columns(2)
+
+    with m1:
         st.markdown("### 🟡 별 A")
-        st.metric("거리", f"{star_a['distance']} pc")
-        st.metric("연주시차", f"{star_a['parallax']:.1f} mas")
+        st.metric("거리", f"{star_a['distance']:.0f} pc")
+        st.metric("연주시차", f"{star_a['parallax_mas']:.2f} mas")
         st.metric("겉보기 등급", f"{star_a['apparent_mag']:.2f}")
         st.metric("절대등급", f"{star_a['absolute_mag']:.2f}")
 
-    with result_col2:
+    with m2:
         st.markdown("### 🔵 별 B")
-        st.metric("거리", f"{star_b['distance']} pc")
-        st.metric("연주시차", f"{star_b['parallax']:.1f} mas")
+        st.metric("거리", f"{star_b['distance']:.0f} pc")
+        st.metric("연주시차", f"{star_b['parallax_mas']:.2f} mas")
         st.metric("겉보기 등급", f"{star_b['apparent_mag']:.2f}")
         st.metric("절대등급", f"{star_b['absolute_mag']:.2f}")
 
@@ -535,115 +836,107 @@ with tab1:
         star_a["apparent_mag"],
         star_b["apparent_mag"],
         "별 A",
-        "별 B"
+        "별 B",
     )
 
     absolute_winner, absolute_text = compare_mag(
         star_a["absolute_mag"],
         star_b["absolute_mag"],
         "별 A",
-        "별 B"
+        "별 B",
     )
 
-    st.divider()
+    r1, r2 = st.columns(2)
 
-    st.subheader("3. 해석하기")
-
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.markdown("### 👀 겉보기 등급")
+    with r1:
+        st.markdown("### 👀 겉보기 등급 비교")
         st.write(apparent_text)
-        st.caption("겉보기 등급은 지구에서 보이는 밝기입니다.")
+        st.caption("지구에서 보이는 밝기입니다.")
 
-    with col_right:
-        st.markdown("### 💡 절대등급")
+    with r2:
+        st.markdown("### 💡 절대등급 비교")
         st.write(absolute_text)
-        st.caption("절대등급은 별을 10 pc에 두었다고 생각했을 때의 등급입니다.")
+        st.caption("두 별을 모두 10 pc에 두었다고 생각했을 때의 밝기입니다.")
 
-    if apparent_winner != absolute_winner and apparent_winner != "거의 같음" and absolute_winner != "거의 같음":
+    if (
+        apparent_winner != absolute_winner
+        and apparent_winner != "거의 같음"
+        and absolute_winner != "거의 같음"
+    ):
         st.success(
-            f"핵심 발견: 겉보기로는 {apparent_winner}가 더 밝지만, "
+            f"핵심 발견: 지구에서 볼 때는 {apparent_winner}가 더 밝지만, "
             f"10 pc에서 비교하면 {absolute_winner}가 더 밝습니다. "
             "즉, 보이는 밝기와 실제 밝기는 다를 수 있습니다."
         )
     else:
         st.warning(
-            "이번 설정에서는 겉보기 밝기 순서와 실제 밝기 순서가 크게 뒤집히지 않았습니다. "
+            "이번 조건에서는 겉보기 밝기 순서와 실제 밝기 순서가 크게 뒤집히지 않았습니다. "
             "거리와 실제 밝기를 더 극단적으로 바꿔 보세요."
         )
 
 
 # ------------------------------------------------------------
-# 탭 2: 미션 활동
+# 탭 2: 수업 질문
 # ------------------------------------------------------------
 with tab2:
-    st.subheader("🎯 학생 미션")
+    st.subheader("📘 학생 탐구 질문")
 
     st.markdown(
         """
-        ### 미션 1. 가까워서 밝게 보이는 별 만들기
-        - 별 A의 실제 밝기를 작게 만든다.
-        - 별 A의 거리를 아주 가깝게 만든다.
-        - 별 A가 실제로는 어두운데도 지구에서는 밝게 보이는지 확인한다.
+### 활동 1. 겉보기 밝기 관찰하기
 
-        ### 미션 2. 멀지만 실제로 매우 밝은 별 만들기
-        - 별 B의 실제 밝기를 크게 만든다.
-        - 별 B의 거리를 멀게 만든다.
-        - 지구에서는 생각보다 어둡게 보일 수 있는지 확인한다.
+1. 별 A와 별 B 중 지구에서 더 밝게 보이는 별은 무엇인가?
+2. 더 밝게 보인 이유는 실제로 밝기 때문인가, 거리가 가깝기 때문인가?
+3. 별의 거리를 멀게 하면 지상 관측 화면에서 어떤 변화가 생기는가?
 
-        ### 미션 3. 밝기 순서 뒤집기
-        아래 문장이 나오도록 조작해 보세요.
+---
 
-        > 겉보기로는 별 A가 더 밝지만, 절대등급으로는 별 B가 더 밝다.
+### 활동 2. 연주시차 관찰하기
 
-        또는 반대로,
+1. 연주시차 애니메이션에서 더 크게 좌우로 움직이는 별은 어느 별인가?
+2. 그 별은 가까운 별인가, 먼 별인가?
+3. 연주시차가 클수록 거리가 어떻게 되는지 한 문장으로 정리하시오.
 
-        > 겉보기로는 별 B가 더 밝지만, 절대등급으로는 별 A가 더 밝다.
-        """
-    )
+---
 
-    st.divider()
+### 활동 3. 절대등급 이해하기
 
-    st.subheader("✍️ 학생 기록 문장")
+1. 10 pc로 옮겨 보기 버튼을 누르면 어떤 별의 밝기가 더 크게 변하는가?
+2. 절대등급은 왜 모든 별을 10 pc에 둔다고 가정할까?
+3. 보이는 밝기와 실제 밝기가 다를 수 있는 이유를 설명하시오.
 
-    st.markdown(
-        """
-        학생들에게 아래 문장을 완성하게 하면 좋습니다.
+---
 
-        1. 연주시차가 큰 별은 거리가 ________ 별이다.
-        2. 겉보기 등급은 ________에서 보이는 밝기를 나타낸다.
-        3. 절대등급은 별을 모두 ________ pc에 두었다고 생각했을 때의 밝기이다.
-        4. 별이 밝게 보인다고 해서 반드시 실제로 밝은 것은 아니다. 왜냐하면 ________ 때문이다.
-        """
-    )
+### 학생 정리 문장
 
-    st.info(
-        "수업에서는 수식보다 먼저 화면 조작을 시키는 것이 좋습니다. "
-        "학생이 먼저 '가까우면 밝게 보인다'를 발견한 뒤, 그다음 절대등급을 설명하면 이해가 훨씬 쉽습니다."
+- 겉보기 등급은 별이 ________에서 보이는 밝기를 나타낸다.
+- 절대등급은 별을 모두 ________ pc에 두었다고 생각했을 때의 밝기이다.
+- 연주시차가 큰 별은 거리가 ________ 별이다.
+- 별이 밝게 보인다고 해서 반드시 실제로 밝은 것은 아니다. 왜냐하면 ________ 때문이다.
+"""
     )
 
 
 # ------------------------------------------------------------
-# 탭 3: 실제 Gaia 자료
+# 탭 3: Gaia 실제 자료
 # ------------------------------------------------------------
 with tab3:
-    st.subheader("🔭 실제 Gaia 자료로 확인하기")
+    st.subheader("🔭 Gaia 실제 별 자료로 확인하기")
 
     st.markdown(
         """
-        이 탭은 실제 별 자료를 확인하는 보조 활동입니다.  
-        처음부터 실제 데이터로 들어가면 개념이 흐려질 수 있으므로, 먼저 조작 실험실에서 개념을 잡은 뒤 사용하세요.
-        """
+이 탭은 실제 관측 자료를 시뮬레이터에 넣어 보는 보조 활동입니다.  
+수업 도입에서는 먼저 시뮬레이터로 개념을 잡고, 이후 실제 자료로 확장하는 흐름이 좋습니다.
+"""
     )
 
     try:
-        with st.spinner("Gaia Archive에서 별 자료를 불러오는 중입니다..."):
+        with st.spinner("Gaia Archive에서 실제 별 자료를 불러오는 중입니다..."):
             gaia_df = load_gaia_data()
 
         st.success(f"Gaia 실제 별 자료 {len(gaia_df)}개를 불러왔습니다.")
 
-        def gaia_label(row):
+        def label(row):
             return (
                 f"{int(row['번호'])}번 | Gaia {int(row['source_id'])} | "
                 f"거리 {row['distance_pc']:.1f} pc | "
@@ -651,82 +944,63 @@ with tab3:
                 f"절대 G {row['absolute_g_mag']:.2f}"
             )
 
-        labels = [gaia_label(row) for _, row in gaia_df.iterrows()]
-        label_to_idx = {label: i for i, label in enumerate(labels)}
+        labels = [label(row) for _, row in gaia_df.iterrows()]
+        label_to_idx = {v: i for i, v in enumerate(labels)}
 
-        gcol1, gcol2 = st.columns(2)
+        g1, g2 = st.columns(2)
 
-        with gcol1:
-            selected_gaia_a = st.selectbox("실제 별 A", labels, index=0)
+        with g1:
+            selected_a = st.selectbox("실제 별 A", labels, index=0)
 
-        with gcol2:
-            selected_gaia_b = st.selectbox("실제 별 B", labels, index=1)
+        with g2:
+            selected_b = st.selectbox("실제 별 B", labels, index=1)
 
-        gaia_a = gaia_df.iloc[label_to_idx[selected_gaia_a]]
-        gaia_b = gaia_df.iloc[label_to_idx[selected_gaia_b]]
+        gaia_a = gaia_df.iloc[label_to_idx[selected_a]]
+        gaia_b = gaia_df.iloc[label_to_idx[selected_b]]
 
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "구분": "실제 별 A",
-                        "Gaia source_id": int(gaia_a["source_id"]),
-                        "연주시차(mas)": round(gaia_a["parallax"], 3),
-                        "거리(pc)": round(gaia_a["distance_pc"], 2),
-                        "겉보기 등급 G": round(gaia_a["phot_g_mean_mag"], 2),
-                        "절대등급 G": round(gaia_a["absolute_g_mag"], 2),
-                    },
-                    {
-                        "구분": "실제 별 B",
-                        "Gaia source_id": int(gaia_b["source_id"]),
-                        "연주시차(mas)": round(gaia_b["parallax"], 3),
-                        "거리(pc)": round(gaia_b["distance_pc"], 2),
-                        "겉보기 등급 G": round(gaia_b["phot_g_mean_mag"], 2),
-                        "절대등급 G": round(gaia_b["absolute_g_mag"], 2),
-                    }
-                ]
-            ),
-            use_container_width=True,
-            hide_index=True
+        show_df = pd.DataFrame(
+            [
+                {
+                    "구분": "실제 별 A",
+                    "Gaia source_id": int(gaia_a["source_id"]),
+                    "연주시차(mas)": round(gaia_a["parallax"], 3),
+                    "거리(pc)": round(gaia_a["distance_pc"], 2),
+                    "겉보기 등급 G": round(gaia_a["phot_g_mean_mag"], 2),
+                    "절대등급 G": round(gaia_a["absolute_g_mag"], 2),
+                },
+                {
+                    "구분": "실제 별 B",
+                    "Gaia source_id": int(gaia_b["source_id"]),
+                    "연주시차(mas)": round(gaia_b["parallax"], 3),
+                    "거리(pc)": round(gaia_b["distance_pc"], 2),
+                    "겉보기 등급 G": round(gaia_b["phot_g_mean_mag"], 2),
+                    "절대등급 G": round(gaia_b["absolute_g_mag"], 2),
+                },
+            ]
         )
 
-        gaia_app_winner, gaia_app_text = compare_mag(
-            gaia_a["phot_g_mean_mag"],
-            gaia_b["phot_g_mean_mag"],
-            "실제 별 A",
-            "실제 별 B"
-        )
+        st.dataframe(show_df, use_container_width=True, hide_index=True)
 
-        gaia_abs_winner, gaia_abs_text = compare_mag(
-            gaia_a["absolute_g_mag"],
-            gaia_b["absolute_g_mag"],
-            "실제 별 A",
-            "실제 별 B"
-        )
-
-        st.write("👀 겉보기 등급 비교:", gaia_app_text)
-        st.write("💡 절대등급 비교:", gaia_abs_text)
-
-        if st.button("선택한 Gaia 별을 조작 실험실로 가져오기"):
-            st.session_state.a_distance = nearest_value(DISTANCE_OPTIONS, float(gaia_a["distance_pc"]))
-            st.session_state.b_distance = nearest_value(DISTANCE_OPTIONS, float(gaia_b["distance_pc"]))
+        if st.button("선택한 Gaia 별을 시뮬레이터에 넣기", use_container_width=True):
+            st.session_state.a_distance = float(np.clip(gaia_a["distance_pc"], 1, 500))
+            st.session_state.b_distance = float(np.clip(gaia_b["distance_pc"], 1, 500))
 
             st.session_state.a_luminosity = nearest_value(
                 LUMINOSITY_OPTIONS,
-                float(gaia_a["luminosity_like"])
+                float(np.clip(gaia_a["luminosity_like"], 0.01, 1000)),
             )
             st.session_state.b_luminosity = nearest_value(
                 LUMINOSITY_OPTIONS,
-                float(gaia_b["luminosity_like"])
+                float(np.clip(gaia_b["luminosity_like"], 0.01, 1000)),
             )
 
-            st.session_state.view_mode = "apparent"
+            st.session_state.view_mode = "지구에서 보기"
             st.rerun()
 
     except Exception as e:
         st.error("Gaia Archive 자료를 불러오지 못했습니다.")
         st.code(str(e))
         st.info(
-            "인터넷 연결 또는 Gaia 서버 상태에 따라 일시적으로 실패할 수 있습니다. "
-            "그래도 조작 실험실 탭은 Gaia 연결 없이 사용할 수 있습니다."
+            "Gaia 서버 상태나 네트워크 문제일 수 있습니다. "
+            "시뮬레이터 탭은 Gaia 연결 없이도 정상 작동합니다."
         )
