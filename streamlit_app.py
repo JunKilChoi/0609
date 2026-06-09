@@ -16,80 +16,171 @@ st.set_page_config(
     layout="centered",
 )
 
+TOTAL_STUDENTS = 30
+
 
 # =========================
-# 화면 꾸미기 CSS
+# CSS 디자인
 # =========================
 
 st.markdown(
     """
     <style>
     .stApp {
-        background: linear-gradient(135deg, #fff1f8 0%, #e0f7ff 45%, #fff8d6 100%);
+        background:
+            radial-gradient(circle at top left, #ffe1f1 0, transparent 35%),
+            radial-gradient(circle at top right, #d8f4ff 0, transparent 35%),
+            linear-gradient(135deg, #fff7fb 0%, #eefaff 45%, #fff7df 100%);
     }
 
     .main-title {
         text-align: center;
-        font-size: 48px;
-        font-weight: 900;
+        font-size: 46px;
+        font-weight: 1000;
         color: #ff4fa3;
-        text-shadow: 3px 3px 0px #fff, 6px 6px 0px #ffd166;
-        margin-bottom: 0px;
+        text-shadow: 3px 3px 0 #ffffff, 6px 6px 0 #ffd166;
+        margin-top: 5px;
+        margin-bottom: 2px;
     }
 
     .sub-title {
         text-align: center;
-        font-size: 20px;
-        color: #555;
-        margin-bottom: 30px;
+        font-size: 18px;
+        color: #666;
+        font-weight: 700;
+        margin-bottom: 18px;
     }
 
-    .cute-box {
-        background: rgba(255, 255, 255, 0.78);
-        border-radius: 28px;
-        padding: 25px;
-        border: 4px dashed #ff9bd2;
-        box-shadow: 0 12px 30px rgba(255, 100, 170, 0.25);
-        margin-bottom: 25px;
-    }
-
-    .winner-card {
-        background: linear-gradient(135deg, #ff5fa2, #ffc857, #69dbff);
-        padding: 35px;
-        border-radius: 35px;
-        text-align: center;
-        color: white;
-        box-shadow: 0 20px 50px rgba(255, 95, 162, 0.45);
-        border: 6px solid white;
-        margin-top: 25px;
-        animation: pop 0.55s ease-out;
+    .stage-card {
+        background: rgba(255, 255, 255, 0.84);
+        border-radius: 34px;
+        padding: 22px 24px 26px 24px;
+        border: 5px solid rgba(255, 255, 255, 0.95);
+        box-shadow: 0 18px 45px rgba(255, 91, 160, 0.25);
+        margin-bottom: 18px;
     }
 
     .winner-label {
-        font-size: 26px;
-        font-weight: 800;
+        text-align: center;
+        font-size: 18px;
+        font-weight: 900;
+        color: #777;
         margin-bottom: 8px;
     }
 
     .winner-name {
-        font-size: 64px;
+        width: 86%;
+        margin: 0 auto 13px auto;
+        padding: 14px 20px;
+        text-align: center;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #ff69b4, #ff9a9e, #ffd166);
+        color: white;
+        font-size: 42px;
         font-weight: 1000;
-        text-shadow: 3px 3px 0px rgba(0,0,0,0.18);
+        letter-spacing: -1px;
+        text-shadow: 2px 2px 0 rgba(0,0,0,0.16);
+        box-shadow: 0 12px 25px rgba(255, 105, 180, 0.38);
+        animation: pop 0.55s ease-out;
     }
 
-    .winner-message {
-        font-size: 22px;
-        font-weight: 700;
-        margin-top: 10px;
+    .winner-number {
+        width: 190px;
+        height: 190px;
+        border-radius: 50%;
+        margin: 0 auto;
+        background: linear-gradient(135deg, #ffffff, #fff3c4);
+        border: 9px solid #ffca3a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ff4fa3;
+        font-size: 78px;
+        font-weight: 1000;
+        box-shadow: 0 18px 32px rgba(255, 202, 58, 0.45);
+        animation: bounce 0.7s ease-out;
+    }
+
+    .winner-number-small {
+        font-size: 28px;
+        margin-left: 4px;
+    }
+
+    .placeholder-name {
+        width: 86%;
+        margin: 0 auto 13px auto;
+        padding: 14px 20px;
+        text-align: center;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #dcefff, #f5e6ff);
+        color: #7b7b7b;
+        font-size: 30px;
+        font-weight: 900;
+        border: 3px dashed #b7dfff;
+    }
+
+    .placeholder-number {
+        width: 170px;
+        height: 170px;
+        border-radius: 50%;
+        margin: 0 auto;
+        background: rgba(255,255,255,0.75);
+        border: 7px dashed #c7d9ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9aa7c7;
+        font-size: 58px;
+        font-weight: 1000;
+    }
+
+    .student-card {
+        background: rgba(255,255,255,0.78);
+        border: 2px solid rgba(255,255,255,0.95);
+        border-radius: 18px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        font-weight: 800;
+        box-shadow: 0 8px 18px rgba(100,100,100,0.08);
+    }
+
+    .history-chip {
+        display: inline-block;
+        background: white;
+        border: 2px solid #ffd166;
+        color: #ff4fa3;
+        padding: 7px 12px;
+        border-radius: 999px;
+        font-weight: 900;
+        margin: 4px;
+        box-shadow: 0 4px 10px rgba(255, 202, 58, 0.25);
+    }
+
+    div.stButton > button {
+        width: 100%;
+        height: 68px;
+        font-size: 25px;
+        font-weight: 1000;
+        border-radius: 24px;
+        border: none;
+        color: white;
+        background: linear-gradient(90deg, #ff4fa3, #ffca3a, #56ccf2);
+        box-shadow: 0 12px 25px rgba(255, 79, 163, 0.35);
+    }
+
+    div.stButton > button:hover {
+        transform: scale(1.015);
+        color: white;
+        border: none;
     }
 
     @keyframes pop {
         0% {
-            transform: scale(0.3) rotate(-8deg);
+            transform: scale(0.4) rotate(-5deg);
             opacity: 0;
         }
-        70% {
-            transform: scale(1.08) rotate(3deg);
+        75% {
+            transform: scale(1.06) rotate(2deg);
             opacity: 1;
         }
         100% {
@@ -97,30 +188,18 @@ st.markdown(
         }
     }
 
-    div.stButton > button {
-        width: 100%;
-        height: 70px;
-        font-size: 26px;
-        font-weight: 900;
-        border-radius: 25px;
-        border: none;
-        background: linear-gradient(90deg, #ff5fa2, #ffc857, #69dbff);
-        color: white;
-        box-shadow: 0 10px 25px rgba(255, 95, 162, 0.35);
-    }
-
-    div.stButton > button:hover {
-        transform: scale(1.02);
-        border: none;
-        color: white;
-    }
-
-    .small-card {
-        background: rgba(255,255,255,0.75);
-        padding: 16px;
-        border-radius: 18px;
-        border: 2px solid rgba(255,255,255,0.9);
-        margin-bottom: 10px;
+    @keyframes bounce {
+        0% {
+            transform: scale(0.2);
+            opacity: 0;
+        }
+        60% {
+            transform: scale(1.12);
+            opacity: 1;
+        }
+        100% {
+            transform: scale(1);
+        }
     }
     </style>
     """,
@@ -135,22 +214,25 @@ st.markdown(
 if "history" not in st.session_state:
     st.session_state.history = []
 
-if "last_winner" not in st.session_state:
-    st.session_state.last_winner = None
+if "winner_number" not in st.session_state:
+    st.session_state.winner_number = None
+
+if "winner_name" not in st.session_state:
+    st.session_state.winner_name = None
 
 
 # =========================
-# 색종이 애니메이션
+# 함수
 # =========================
 
 def show_confetti():
-    emojis = ["🎉", "✨", "🌈", "⭐", "💖", "🎊", "🍀", "🧡", "💛", "💙"]
+    emojis = ["🎉", "✨", "🌈", "⭐", "💖", "🎊", "🍀", "🧡", "💛", "💙", "🌟"]
 
     pieces = ""
-    for i in range(90):
+    for _ in range(95):
         left = random.randint(0, 100)
-        delay = random.uniform(0, 1.8)
-        duration = random.uniform(2.2, 4.5)
+        delay = random.uniform(0, 1.4)
+        duration = random.uniform(2.0, 4.0)
         size = random.randint(18, 34)
         emoji = random.choice(emojis)
 
@@ -178,14 +260,14 @@ def show_confetti():
         .confetti-area {{
             position: relative;
             width: 100%;
-            height: 220px;
+            height: 190px;
             overflow: hidden;
             background: transparent;
         }}
 
         .confetti {{
             position: absolute;
-            top: -50px;
+            top: -45px;
             animation-name: fall;
             animation-timing-function: ease-in;
             animation-fill-mode: forwards;
@@ -193,11 +275,11 @@ def show_confetti():
 
         @keyframes fall {{
             0% {{
-                transform: translateY(-60px) rotate(0deg);
+                transform: translateY(-50px) rotate(0deg);
                 opacity: 1;
             }}
             100% {{
-                transform: translateY(260px) rotate(720deg);
+                transform: translateY(230px) rotate(720deg);
                 opacity: 0;
             }}
         }}
@@ -207,21 +289,67 @@ def show_confetti():
             {pieces}
         </div>
         """,
-        height=230,
+        height=195,
     )
 
 
-# =========================
-# 이름 처리 함수
-# =========================
-
 def parse_names(text):
-    names = []
-    for line in text.splitlines():
-        name = line.strip()
-        if name and name not in names:
-            names.append(name)
+    raw_names = [line.strip() for line in text.splitlines()]
+
+    names = {}
+    for number in range(1, TOTAL_STUDENTS + 1):
+        index = number - 1
+
+        if index < len(raw_names) and raw_names[index]:
+            names[number] = raw_names[index]
+        else:
+            names[number] = f"{number}번"
+
     return names
+
+
+def draw_student(exclude_picked):
+    all_numbers = list(range(1, TOTAL_STUDENTS + 1))
+
+    if exclude_picked:
+        candidates = [number for number in all_numbers if number not in st.session_state.history]
+
+        if not candidates:
+            st.session_state.history = []
+            candidates = all_numbers
+            st.info("30명이 모두 한 번씩 뽑혀서 기록을 초기화했습니다.")
+    else:
+        candidates = all_numbers
+
+    return random.choice(candidates)
+
+
+def render_result():
+    if st.session_state.winner_number is None:
+        st.markdown(
+            """
+            <div class="stage-card">
+                <div class="winner-label">오늘의 발표자는?</div>
+                <div class="placeholder-name">버튼을 누르면 이름이 여기에!</div>
+                <div class="placeholder-number">?</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        safe_name = html_lib.escape(st.session_state.winner_name)
+        number = st.session_state.winner_number
+
+        st.markdown(
+            f"""
+            <div class="stage-card">
+                <div class="winner-label">🎊 오늘의 발표자는 🎊</div>
+                <div class="winner-name">{safe_name}</div>
+                <div class="winner-number">{number}<span class="winner-number-small">번</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # =========================
@@ -229,130 +357,105 @@ def parse_names(text):
 # =========================
 
 st.markdown('<div class="main-title">🎉 짜잔! 발표자 뽑기 🎉</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">이름을 넣고 버튼을 누르면 오늘의 발표자가 화려하게 등장합니다!</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">1번부터 30번까지 자동으로 준비되어 있어요</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="cute-box">', unsafe_allow_html=True)
-
-default_names = """김민수
-이지우
-박서준
-최하윤
-정도윤
-한서아
-윤지호
-오유나"""
+default_names = "\n".join([f"{i}번 학생" for i in range(1, TOTAL_STUDENTS + 1)])
 
 names_text = st.text_area(
-    "학생 이름을 한 줄에 한 명씩 입력하세요.",
+    "학생 이름 입력",
     value=default_names,
-    height=180,
+    height=115,
+    help="위에서부터 1번, 2번, 3번 순서로 자동 연결됩니다.",
 )
 
-col1, col2 = st.columns(2)
+name_map = parse_names(names_text)
+
+render_result()
+
+col1, col2 = st.columns([3, 1])
 
 with col1:
-    exclude_picked = st.checkbox("이미 뽑힌 사람은 제외하기", value=True)
+    pick_clicked = st.button("🎁 짜잔! 발표자 뽑기!")
 
 with col2:
-    slow_mode = st.checkbox("두근두근 연출 켜기", value=True)
+    reset_clicked = st.button("🧹 초기화")
 
-st.markdown("</div>", unsafe_allow_html=True)
+exclude_picked = st.checkbox("이미 뽑힌 번호는 제외하기", value=True)
 
-names = parse_names(names_text)
+if pick_clicked:
+    loading = st.empty()
 
-pick_button = st.button("🎁 발표자 뽑기!")
+    for word in ["두근...", "두근두근...", "과연 누구?", "3", "2", "1", "짜잔!"]:
+        loading.markdown(
+            f"""
+            <div style="
+                text-align:center;
+                font-size:34px;
+                font-weight:1000;
+                color:#ff4fa3;
+                margin:10px;
+            ">
+                {word}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        time.sleep(0.28)
 
-if pick_button:
-    if not names:
-        st.error("학생 이름을 먼저 입력하세요.")
-    else:
-        candidates = names
+    loading.empty()
 
-        if exclude_picked:
-            not_picked = [name for name in names if name not in st.session_state.history]
+    winner_number = draw_student(exclude_picked)
+    winner_name = name_map[winner_number]
 
-            if not_picked:
-                candidates = not_picked
-            else:
-                st.session_state.history = []
-                candidates = names
-                st.info("모든 학생이 한 번씩 뽑혀서 기록을 초기화했습니다.")
+    st.session_state.winner_number = winner_number
+    st.session_state.winner_name = winner_name
+    st.session_state.history.append(winner_number)
 
-        if slow_mode:
-            countdown_area = st.empty()
-            for word in ["두근...", "두근두근...", "과연 누구?", "3", "2", "1", "짜잔!"]:
-                countdown_area.markdown(
-                    f"""
-                    <div style="
-                        text-align:center;
-                        font-size:42px;
-                        font-weight:900;
-                        color:#ff4fa3;
-                        margin:25px;
-                    ">
-                        {word}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                time.sleep(0.45)
+    st.balloons()
+    show_confetti()
+    st.rerun()
 
-        winner = random.choice(candidates)
-        st.session_state.last_winner = winner
-        st.session_state.history.append(winner)
-
-        st.balloons()
-        show_confetti()
+if reset_clicked:
+    st.session_state.history = []
+    st.session_state.winner_number = None
+    st.session_state.winner_name = None
+    st.success("뽑기 기록을 초기화했습니다.")
+    st.rerun()
 
 
 # =========================
-# 결과 화면
-# =========================
-
-if st.session_state.last_winner:
-    safe_winner = html_lib.escape(st.session_state.last_winner)
-
-    st.markdown(
-        f"""
-        <div class="winner-card">
-            <div class="winner-label">오늘의 발표자는...</div>
-            <div class="winner-name">{safe_winner}</div>
-            <div class="winner-message">👏 멋진 발표 기대합니다! 👏</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# =========================
-# 기록 관리
+# 아래쪽 정보
 # =========================
 
 st.divider()
 
-left, right = st.columns(2)
+with st.expander("📋 1번부터 30번까지 명단 보기"):
+    cols = st.columns(3)
 
-with left:
-    st.subheader("📜 뽑힌 기록")
-    if st.session_state.history:
-        for i, name in enumerate(st.session_state.history, start=1):
+    for number in range(1, TOTAL_STUDENTS + 1):
+        col = cols[(number - 1) % 3]
+        with col:
+            safe_name = html_lib.escape(name_map[number])
             st.markdown(
                 f"""
-                <div class="small-card">
-                    {i}. {html_lib.escape(name)}
+                <div class="student-card">
+                    {number}번 · {safe_name}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-    else:
-        st.write("아직 뽑힌 사람이 없습니다.")
 
-with right:
-    st.subheader("🧹 기록 초기화")
-    st.write("다시 처음부터 뽑고 싶을 때 누르세요.")
+st.subheader("📜 뽑힌 기록")
 
-    if st.button("기록 초기화하기"):
-        st.session_state.history = []
-        st.session_state.last_winner = None
-        st.success("기록을 초기화했습니다.")
-        st.rerun()
+if st.session_state.history:
+    history_html = ""
+
+    for number in st.session_state.history:
+        safe_name = html_lib.escape(name_map.get(number, f"{number}번"))
+        history_html += f"""
+        <span class="history-chip">{number}번 {safe_name}</span>
+        """
+
+    st.markdown(history_html, unsafe_allow_html=True)
+else:
+    st.write("아직 뽑힌 번호가 없습니다.")
