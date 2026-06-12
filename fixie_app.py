@@ -783,7 +783,7 @@ def build_simulation_html(data: dict) -> str:
   .black-line { stroke: #0f172a; stroke-width: 6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .rider { stroke: #111827; stroke-width: 7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .head { fill: #111827; }
-  .smoke { fill: #6b7280; stroke: #374151; stroke-width: 1.2; }
+  .smoke { fill: #374151; stroke: #111827; stroke-width: 1.8; }
   .skid { stroke: #111827; stroke-width: 6; stroke-linecap: round; opacity: 0; }
   .time-charts {
     display: grid;
@@ -1187,14 +1187,17 @@ function drawEnergyChart(currentT) {
   const ph = h - m.top - m.bottom;
   const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
   const initialKE = 0.5 * DATA.massKg * DATA.speedMs * DATA.speedMs;
-  // 에너지 그래프는 0J 기준선부터 전체 에너지 변화가 잘리지 않도록 그린다.
+  // 에너지 그래프는 0J x축이 바닥에 딱 붙어 잘리지 않도록
+  // y축 아래쪽에 약간의 음수 여백을 둔다. 음수 값은 눈금으로 표시하지 않는다.
   const yMaxRaw = Math.max(100, initialKE * 1.10);
   const yStep = niceChartStep(yMaxRaw / 5);
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
+  const yMin = -0.08 * yMax;
   const xStep = niceChartStep(totalT / 7);
 
   const sxT = t => m.left + (t / totalT) * pw;
-  const syE = e => m.top + ph - (e / yMax) * ph;
+  const syE = e => m.top + ph - ((e - yMin) / (yMax - yMin)) * ph;
+  const xAxisY = syE(0);
 
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#ffffff";
@@ -1222,17 +1225,18 @@ function drawEnergyChart(currentT) {
     const px = sxT(t);
     ctx.beginPath();
     ctx.moveTo(px, m.top);
-    ctx.lineTo(px, m.top + ph);
+    ctx.lineTo(px, xAxisY);
     ctx.stroke();
-    ctx.fillText(chartTickLabel(t, xStep), px, m.top + ph + 8);
+    ctx.fillText(chartTickLabel(t, xStep), px, xAxisY + 9);
   }
 
+  // y축과 0J x축을 화면 안쪽에 분명하게 그린다.
   ctx.strokeStyle = "#1f2937";
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
   ctx.moveTo(m.left, m.top);
-  ctx.lineTo(m.left, m.top + ph);
-  ctx.lineTo(m.left + pw, m.top + ph);
+  ctx.lineTo(m.left, xAxisY);
+  ctx.lineTo(m.left + pw, xAxisY);
   ctx.stroke();
 
   const events = [
@@ -1248,7 +1252,7 @@ function drawEnergyChart(currentT) {
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.moveTo(px, m.top);
-    ctx.lineTo(px, m.top + ph);
+    ctx.lineTo(px, xAxisY);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.save();
@@ -1296,7 +1300,7 @@ function drawEnergyChart(currentT) {
   ctx.setLineDash([5,5]);
   ctx.beginPath();
   ctx.moveTo(xNow, m.top);
-  ctx.lineTo(xNow, m.top + ph);
+  ctx.lineTo(xNow, xAxisY);
   ctx.stroke();
   ctx.setLineDash([]);
 
@@ -1340,7 +1344,7 @@ function drawEnergyChart(currentT) {
   ctx.font = "850 11px Pretendard, Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
-  ctx.fillText("시간 t (s)", m.left + pw/2, h - 2);
+  ctx.fillText("시간 t (s)", m.left + pw/2, Math.min(h - 2, xAxisY + 34));
   ctx.save();
   ctx.translate(13, m.top + ph/2);
   ctx.rotate(-Math.PI/2);
@@ -1471,14 +1475,14 @@ function animate(ts) {
     const frontX = bikeX + 32;
     const smokeY = WHEEL_Y + 16;
     const smokes = [
-      ["smoke1", rearX - 8 - pulse*10, smokeY - 12, 16 + pulse*8, .82 + pulse*.12],
-      ["smoke2", rearX - 28 - pulse*16, smokeY - 24, 22 + pulse*11, .70 + pulse*.14],
-      ["smoke3", rearX - 50 - pulse*22, smokeY - 6, 16 + pulse*9, .58 + pulse*.16],
-      ["smoke4", rearX - 70 - pulse*28, smokeY - 28, 19 + pulse*10, .45 + pulse*.18],
-      ["smoke5", frontX - 6 - pulse*8, smokeY - 10, 14 + pulse*7, .70 + pulse*.14],
-      ["smoke6", frontX - 25 - pulse*13, smokeY - 22, 18 + pulse*9, .56 + pulse*.16],
-      ["smoke7", rearX - 18 - pulse*18, smokeY + 8, 13 + pulse*7, .60 + pulse*.16],
-      ["smoke8", frontX - 40 - pulse*18, smokeY + 4, 15 + pulse*8, .48 + pulse*.16],
+      ["smoke1", rearX - 4 - pulse*12, smokeY - 14, 22 + pulse*10, .96],
+      ["smoke2", rearX - 30 - pulse*18, smokeY - 29, 30 + pulse*13, .92],
+      ["smoke3", rearX - 58 - pulse*25, smokeY - 8, 24 + pulse*11, .88],
+      ["smoke4", rearX - 88 - pulse*32, smokeY - 34, 26 + pulse*12, .80],
+      ["smoke5", frontX - 4 - pulse*10, smokeY - 12, 20 + pulse*9, .94],
+      ["smoke6", frontX - 28 - pulse*16, smokeY - 27, 26 + pulse*11, .88],
+      ["smoke7", rearX - 22 - pulse*20, smokeY + 10, 20 + pulse*9, .86],
+      ["smoke8", frontX - 50 - pulse*22, smokeY + 6, 22 + pulse*10, .82],
     ];
     for (const [id, cx, cy, r, op] of smokes) {
       setAttr(id, "cx", cx);
