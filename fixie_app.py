@@ -2251,23 +2251,23 @@ st.markdown("<div class='section-title'>3. 이론 정리</div>", unsafe_allow_ht
 st.markdown("### 3-1. 수학: 이차함수와 완전제곱식")
 st.markdown(
     """
-총 정지거리 함수는 초기 속도 \(x\)에 대한 이차함수입니다.  
-여기서 \(x\)는 km/h 단위의 초기 속도, \(S(x)\)는 m 단위의 총 정지거리입니다.
+총 정지거리 함수는 초기 속도 $v$에 대한 이차함수입니다.  
+여기서 #v#는 km/h 단위의 초기 속도, $S(v)$는 m 단위의 총 정지거리입니다.
 """
 )
-st.latex(r"S(x)=Ax^2+Bx+0")
+st.latex(r"S(v)=Av^2+Bv+0")
 st.markdown(
     """
-반응 시간 동안 이동한 거리는 속도에 비례하므로 일차항 \(Bx\)가 됩니다.  
-제동거리는 속도의 제곱에 비례하므로 이차항 \(Ax^2\)가 됩니다.
+반응 시간 동안 이동한 거리는 속도에 비례하므로 일차항 $Bv$가 됩니다.  
+제동거리는 속도의 제곱에 비례하므로 이차항 $Av^2$가 됩니다.
 """
 )
 
 st.markdown("#### 완전제곱식으로 바꾸기")
-st.latex(r"S(x)=Ax^2+Bx")
-st.latex(r"S(x)=A\left(x^2+\frac{B}{A}x\right)")
-st.latex(r"S(x)=A\left[\left(x+\frac{B}{2A}\right)^2-\left(\frac{B}{2A}\right)^2\right]")
-st.latex(r"S(x)=A\left(x+\frac{B}{2A}\right)^2-\frac{B^2}{4A}")
+st.latex(r"S(v)=Av^2+Bv")
+st.latex(r"S(v)=A\left(v^2+\frac{B}{A}v\right)")
+st.latex(r"S(v)=A\left[\left(v+\frac{B}{2A}\right)^2-\left(\frac{B}{2A}\right)^2\right]")
+st.latex(r"S(v)=A\left(v+\frac{B}{2A}\right)^2-\frac{B^2}{4A}")
 
 st.markdown(
     f"""
@@ -2284,7 +2284,7 @@ st.markdown(
 st.markdown("### 3-2. 과학(물리): 운동에너지, 마찰력, 일")
 st.markdown(
     """
-달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 \(v^2\)에 비례하여 커집니다.
+달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 $v^2$에 비례하여 커집니다.
 """
 )
 st.latex(r"E_k=\frac{1}{2}mv^2")
@@ -2308,7 +2308,7 @@ st.latex(r"\frac{1}{2}mv^2=\mu mg\cdot d")
 
 st.markdown(
     """
-위 식에서 질량 \(m\)은 양쪽에 모두 들어 있으므로 약분됩니다.
+위 식에서 질량 $m$은 양쪽에 모두 들어 있으므로 약분됩니다.
 그래서 이 단순 모델에서는 자전거+탑승자 질량을 바꾸어도 정지거리가 직접 변하지 않습니다.
 """
 )
@@ -2333,7 +2333,7 @@ st.markdown(
 <div class='info-box'>
 정리하면, 픽시 자전거의 위험성은 속도가 조금 증가할 때 정지거리가 단순히 조금 늘어나는 정도가 아니라,
 제동거리 항 때문에 <b>제곱에 가깝게 빠르게 증가한다</b>는 데 있습니다.
-특히 노면 마찰계수 \(\mu\)가 작으면 이차항의 계수 \(A\)가 커져 그래프가 더 가파르게 올라갑니다.
+특히 노면 마찰계수 $mu$가 작으면 이차항의 계수 $A$가 커져 그래프가 더 가파르게 올라갑니다.
 </div>
 """,
     unsafe_allow_html=True,
