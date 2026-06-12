@@ -677,7 +677,9 @@ canvas.addEventListener("touchend", () => dragging = false);
 
 window.addEventListener("resize", resizeCanvas);
 buildLegend();
-setBestView(-50, Math.max(70, ...DATA.curves.map(c => c.markerSpeed + 25)));
+// 초기 화면: x축 0~20 km/h, y축 0~15 m.
+// 이후 드래그, 휠, 버튼으로 자유롭게 이동·확대할 수 있다.
+view = {xMin: 0, xMax: 20, yMin: 0, yMax: 15};
 resizeCanvas();
 </script>
 </body>
@@ -803,7 +805,15 @@ def build_simulation_html(data: dict) -> str:
   }
   .time-canvas {
     width: 100%;
-    height: 250px;
+    height: 310px;
+    display: block;
+  }
+  .energy-chart-card {
+    grid-column: 1 / -1;
+  }
+  .energy-canvas {
+    width: 100%;
+    height: 340px;
     display: block;
   }
   @media (max-width: 900px) {
@@ -860,6 +870,10 @@ def build_simulation_html(data: dict) -> str:
         <circle id="smoke2" class="smoke" cx="0" cy="0" r="14"/>
         <circle id="smoke3" class="smoke" cx="0" cy="0" r="8"/>
         <circle id="smoke4" class="smoke" cx="0" cy="0" r="12"/>
+        <circle id="smoke5" class="smoke" cx="0" cy="0" r="11"/>
+        <circle id="smoke6" class="smoke" cx="0" cy="0" r="15"/>
+        <circle id="smoke7" class="smoke" cx="0" cy="0" r="9"/>
+        <circle id="smoke8" class="smoke" cx="0" cy="0" r="13"/>
       </g>
       <line id="skidLine" class="skid" x1="0" y1="0" x2="0" y2="0"/>
 
@@ -911,6 +925,10 @@ def build_simulation_html(data: dict) -> str:
         <div class="time-chart-title">이동거리-시간 그래프</div>
         <canvas id="distanceChart" class="time-canvas"></canvas>
       </div>
+      <div class="time-chart-card energy-chart-card">
+        <div class="time-chart-title">에너지 전환 그래프: 운동에너지 + 마찰로 잃은 에너지 = 총에너지</div>
+        <canvas id="energyChart" class="energy-canvas"></canvas>
+      </div>
     </div>
   </div>
 </div>
@@ -941,6 +959,7 @@ function fmt(x) {
 
 const speedCanvas = document.getElementById("speedChart");
 const distanceCanvas = document.getElementById("distanceChart");
+const energyCanvas = document.getElementById("energyChart");
 
 function resizeChartCanvas(canvas) {
   if (!canvas) return null;
@@ -999,9 +1018,10 @@ function drawTimeChart(canvas, kind, currentT) {
   const pw = w - m.left - m.right;
   const ph = h - m.top - m.bottom;
   const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
+  // y축을 넉넉하게 잡아 등속 구간의 직선성과 제동 구간의 곡률이 답답하지 않게 보이도록 한다.
   const yMaxRaw = kind === "speed"
-    ? Math.max(5, DATA.speedMs * 3.6 * 1.15)
-    : Math.max(5, (DATA.approachDistance + DATA.totalStoppingDistance) * 1.12);
+    ? Math.max(8, DATA.speedMs * 3.6 * 1.45)
+    : Math.max(15, (DATA.approachDistance + DATA.totalStoppingDistance) * 1.55);
   const yStep = niceChartStep(yMaxRaw / 5);
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
   const xStep = niceChartStep(totalT / 6);
@@ -1136,9 +1156,201 @@ function drawTimeChart(canvas, kind, currentT) {
   ctx.restore();
 }
 
+function energyValuesAtTime(t) {
+  const mass = DATA.massKg;
+  const vNow = speedAtTime(t);
+  const initialKE = 0.5 * mass * DATA.speedMs * DATA.speedMs;
+  const kinetic = 0.5 * mass * vNow * vNow;
+  const frictionLoss = Math.max(0, initialKE - kinetic);
+  return {
+    kinetic,
+    frictionLoss,
+    total: kinetic + frictionLoss,
+    initialKE
+  };
+}
+
+function jouleLabel(v, step) {
+  if (!isFinite(v)) return "";
+  if (Math.abs(v) >= 1000) return `${(v/1000).toFixed(Math.abs(step) >= 1000 ? 0 : 1)}k`;
+  if (Math.abs(step) >= 10) return String(Math.round(v));
+  return v.toFixed(1).replace(/\.0$/, "");
+}
+
+function drawEnergyChart(currentT) {
+  const canvas = energyCanvas;
+  const info = resizeChartCanvas(canvas);
+  if (!info) return;
+  const ctx = info.ctx, w = info.w, h = info.h;
+  const m = {left: 62, right: 18, top: 22, bottom: 40};
+  const pw = w - m.left - m.right;
+  const ph = h - m.top - m.bottom;
+  const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
+  const initialKE = 0.5 * DATA.massKg * DATA.speedMs * DATA.speedMs;
+  const yMaxRaw = Math.max(100, initialKE * 1.35);
+  const yStep = niceChartStep(yMaxRaw / 5);
+  const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
+  const xStep = niceChartStep(totalT / 7);
+
+  const sxT = t => m.left + (t / totalT) * pw;
+  const syE = e => m.top + ph - (e / yMax) * ph;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+
+  // grid and y labels
+  ctx.strokeStyle = "#e7edf6";
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#64748b";
+  ctx.font = "800 11px Pretendard, Arial";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let y=0; y<=yMax+1e-9; y+=yStep) {
+    const py = syE(y);
+    ctx.beginPath();
+    ctx.moveTo(m.left, py);
+    ctx.lineTo(m.left + pw, py);
+    ctx.stroke();
+    ctx.fillText(jouleLabel(y, yStep), m.left - 8, py);
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (let t=0; t<=totalT+1e-9; t+=xStep) {
+    const px = sxT(t);
+    ctx.beginPath();
+    ctx.moveTo(px, m.top);
+    ctx.lineTo(px, m.top + ph);
+    ctx.stroke();
+    ctx.fillText(chartTickLabel(t, xStep), px, m.top + ph + 8);
+  }
+
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(m.left, m.top);
+  ctx.lineTo(m.left, m.top + ph);
+  ctx.lineTo(m.left + pw, m.top + ph);
+  ctx.stroke();
+
+  const events = [
+    {t: DATA.approachTime, label: "위험 발견", color: "#38bdf8"},
+    {t: DATA.approachTime + DATA.reactionTime, label: "제동 시작", color: "#f59e0b"},
+    {t: totalT, label: "정지", color: "#ef4444"},
+  ];
+  ctx.font = "850 10px Pretendard, Arial";
+  for (const ev of events) {
+    const px = sxT(ev.t);
+    ctx.strokeStyle = ev.color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(px, m.top);
+    ctx.lineTo(px, m.top + ph);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.save();
+    ctx.translate(px + 4, m.top + 10);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillStyle = ev.color;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(ev.label, 0, 0);
+    ctx.restore();
+  }
+
+  function drawEnergyLine(kind, color, width=3) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(m.left, m.top, pw, ph);
+    ctx.clip();
+    ctx.beginPath();
+    const n = 280;
+    for (let i=0; i<=n; i++) {
+      const t = totalT * i / n;
+      const vals = energyValuesAtTime(t);
+      const val = vals[kind];
+      const x = sxT(t);
+      const y = syE(val);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawEnergyLine("kinetic", "#2563eb", 3.2);
+  drawEnergyLine("frictionLoss", "#ef4444", 3.2);
+  drawEnergyLine("total", "#059669", 2.8);
+
+  const tNow = Math.max(0, Math.min(totalT, currentT));
+  const xNow = sxT(tNow);
+  ctx.strokeStyle = "#111827";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5,5]);
+  ctx.beginPath();
+  ctx.moveTo(xNow, m.top);
+  ctx.lineTo(xNow, m.top + ph);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const valsNow = energyValuesAtTime(tNow);
+  const markers = [
+    {kind:"kinetic", color:"#2563eb", label:"운동"},
+    {kind:"frictionLoss", color:"#ef4444", label:"마찰 손실"},
+    {kind:"total", color:"#059669", label:"총"},
+  ];
+  for (const mk of markers) {
+    ctx.fillStyle = mk.color;
+    ctx.beginPath();
+    ctx.arc(xNow, syE(valsNow[mk.kind]), 4.8, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // legend inside chart
+  const legend = [
+    {label:"운동에너지", color:"#2563eb"},
+    {label:"마찰로 잃은 에너지", color:"#ef4444"},
+    {label:"총에너지", color:"#059669"},
+  ];
+  let lx = m.left + 8;
+  const ly = m.top + 12;
+  ctx.font = "900 11px Pretendard, Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (const item of legend) {
+    ctx.strokeStyle = item.color;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(lx+22, ly);
+    ctx.stroke();
+    ctx.fillStyle = "#334155";
+    ctx.fillText(item.label, lx+28, ly);
+    lx += item.label.length * 12 + 64;
+  }
+
+  ctx.fillStyle = "#334155";
+  ctx.font = "850 11px Pretendard, Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("시간 t (s)", m.left + pw/2, h - 2);
+  ctx.save();
+  ctx.translate(13, m.top + ph/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText("에너지 (J)", 0, 0);
+  ctx.restore();
+}
+
 function drawTimeCharts(currentT) {
   drawTimeChart(speedCanvas, "speed", currentT);
   drawTimeChart(distanceCanvas, "distance", currentT);
+  drawEnergyChart(currentT);
 }
 
 function setupMarks() {
@@ -1253,11 +1465,19 @@ function animate(ts) {
     const baseX = bikeX - 78;
     const baseY = WHEEL_Y + 18;
 
+    // 바퀴가 잠기며 미끄러질 때, 뒤·앞바퀴 주변에 연기가 퍼지는 것처럼 강조한다.
+    const rearX = bikeX - 78;
+    const frontX = bikeX + 32;
+    const smokeY = WHEEL_Y + 16;
     const smokes = [
-      ["smoke1", baseX - 5 - pulse*8, baseY - 10, 9 + pulse*5, .35 + pulse*.25],
-      ["smoke2", baseX - 22 - pulse*12, baseY - 20, 13 + pulse*8, .22 + pulse*.20],
-      ["smoke3", baseX - 40 - pulse*16, baseY - 6, 8 + pulse*7, .18 + pulse*.18],
-      ["smoke4", baseX - 56 - pulse*20, baseY - 24, 10 + pulse*8, .12 + pulse*.15],
+      ["smoke1", rearX - 8 - pulse*10, smokeY - 12, 12 + pulse*7, .55 + pulse*.25],
+      ["smoke2", rearX - 28 - pulse*16, smokeY - 24, 18 + pulse*10, .38 + pulse*.24],
+      ["smoke3", rearX - 50 - pulse*22, smokeY - 6, 12 + pulse*8, .28 + pulse*.20],
+      ["smoke4", rearX - 70 - pulse*28, smokeY - 28, 15 + pulse*9, .20 + pulse*.18],
+      ["smoke5", frontX - 6 - pulse*8, smokeY - 10, 10 + pulse*6, .35 + pulse*.18],
+      ["smoke6", frontX - 25 - pulse*13, smokeY - 22, 14 + pulse*8, .24 + pulse*.16],
+      ["smoke7", rearX - 18 - pulse*18, smokeY + 8, 9 + pulse*6, .30 + pulse*.18],
+      ["smoke8", frontX - 40 - pulse*18, smokeY + 4, 11 + pulse*7, .18 + pulse*.15],
     ];
     for (const [id, cx, cy, r, op] of smokes) {
       setAttr(id, "cx", cx);
@@ -1267,7 +1487,7 @@ function animate(ts) {
     }
   } else {
     setAttr("skidLine", "opacity", 0);
-    for (const id of ["smoke1","smoke2","smoke3","smoke4"]) setAttr(id, "opacity", 0);
+    for (const id of ["smoke1","smoke2","smoke3","smoke4","smoke5","smoke6","smoke7","smoke8"]) setAttr(id, "opacity", 0);
   }
 
   setText("phaseText", phase);
@@ -1283,7 +1503,7 @@ function animate(ts) {
     setText("clockText", `총 물리 시간 ${totalPhysical.toFixed(2)}초 / 실제 재생 시간 ${(totalPhysical / DATA.playbackSpeed).toFixed(2)}초`);
     drawTimeCharts(totalPhysical);
     setAttr("skidLine", "opacity", 0.35);
-    for (const id of ["smoke1","smoke2","smoke3","smoke4"]) setAttr(id, "opacity", 0);
+    for (const id of ["smoke1","smoke2","smoke3","smoke4","smoke5","smoke6","smoke7","smoke8"]) setAttr(id, "opacity", 0);
   }
 }
 
@@ -1298,7 +1518,7 @@ restart();
 
 
 def show_simulation(data: dict):
-    components.html(build_simulation_html(data), height=960, scrolling=False)
+    components.html(build_simulation_html(data), height=1280, scrolling=False)
 
 
 # ------------------------------------------------------------
@@ -1562,6 +1782,7 @@ st.markdown(
 sim_data = {
     "speedKmh": float(speed_kmh),
     "speedMs": float(result["speed_ms"]),
+    "massKg": float(bike_mass),
     "aEff": float(result["a_eff"]),
     "approachDistance": float(APPROACH_DISTANCE),
     "reactionDistance": float(result["reaction_distance"]),
