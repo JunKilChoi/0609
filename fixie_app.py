@@ -783,8 +783,8 @@ def build_simulation_html(data: dict) -> str:
   .black-line { stroke: #0f172a; stroke-width: 6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .rider { stroke: #111827; stroke-width: 7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .head { fill: #111827; }
-  .smoke { fill: #d1d5db; opacity: 0; }
-  .skid { stroke: #111827; stroke-width: 5; stroke-linecap: round; opacity: 0; }
+  .smoke { fill: #6b7280; stroke: #374151; stroke-width: 1.2; }
+  .skid { stroke: #111827; stroke-width: 6; stroke-linecap: round; opacity: 0; }
   .time-charts {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -805,7 +805,7 @@ def build_simulation_html(data: dict) -> str:
   }
   .time-canvas {
     width: 100%;
-    height: 310px;
+    height: 430px;
     display: block;
   }
   .energy-chart-card {
@@ -813,7 +813,7 @@ def build_simulation_html(data: dict) -> str:
   }
   .energy-canvas {
     width: 100%;
-    height: 340px;
+    height: 470px;
     display: block;
   }
   @media (max-width: 900px) {
@@ -866,14 +866,14 @@ def build_simulation_html(data: dict) -> str:
       <text id="stopText" x="1002" y="210" text-anchor="middle" class="small">정지</text>
 
       <g id="smokeGroup">
-        <circle id="smoke1" class="smoke" cx="0" cy="0" r="10"/>
-        <circle id="smoke2" class="smoke" cx="0" cy="0" r="14"/>
-        <circle id="smoke3" class="smoke" cx="0" cy="0" r="8"/>
-        <circle id="smoke4" class="smoke" cx="0" cy="0" r="12"/>
-        <circle id="smoke5" class="smoke" cx="0" cy="0" r="11"/>
-        <circle id="smoke6" class="smoke" cx="0" cy="0" r="15"/>
-        <circle id="smoke7" class="smoke" cx="0" cy="0" r="9"/>
-        <circle id="smoke8" class="smoke" cx="0" cy="0" r="13"/>
+        <circle id="smoke1" class="smoke" opacity="0" cx="0" cy="0" r="10"/>
+        <circle id="smoke2" class="smoke" opacity="0" cx="0" cy="0" r="14"/>
+        <circle id="smoke3" class="smoke" opacity="0" cx="0" cy="0" r="8"/>
+        <circle id="smoke4" class="smoke" opacity="0" cx="0" cy="0" r="12"/>
+        <circle id="smoke5" class="smoke" opacity="0" cx="0" cy="0" r="11"/>
+        <circle id="smoke6" class="smoke" opacity="0" cx="0" cy="0" r="15"/>
+        <circle id="smoke7" class="smoke" opacity="0" cx="0" cy="0" r="9"/>
+        <circle id="smoke8" class="smoke" opacity="0" cx="0" cy="0" r="13"/>
       </g>
       <line id="skidLine" class="skid" x1="0" y1="0" x2="0" y2="0"/>
 
@@ -1018,10 +1018,10 @@ function drawTimeChart(canvas, kind, currentT) {
   const pw = w - m.left - m.right;
   const ph = h - m.top - m.bottom;
   const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
-  // y축을 넉넉하게 잡아 등속 구간의 직선성과 제동 구간의 곡률이 답답하지 않게 보이도록 한다.
+  // y축 최대값은 실제 최대값에 맞추고, 그래프 패널 자체를 세로로 길게 만들어 모양이 잘 보이게 한다.
   const yMaxRaw = kind === "speed"
-    ? Math.max(8, DATA.speedMs * 3.6 * 1.45)
-    : Math.max(15, (DATA.approachDistance + DATA.totalStoppingDistance) * 1.55);
+    ? Math.max(5, DATA.speedMs * 3.6)
+    : Math.max(5, DATA.approachDistance + DATA.totalStoppingDistance);
   const yStep = niceChartStep(yMaxRaw / 5);
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
   const xStep = niceChartStep(totalT / 6);
@@ -1187,7 +1187,8 @@ function drawEnergyChart(currentT) {
   const ph = h - m.top - m.bottom;
   const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
   const initialKE = 0.5 * DATA.massKg * DATA.speedMs * DATA.speedMs;
-  const yMaxRaw = Math.max(100, initialKE * 1.35);
+  // 에너지 그래프는 0J 기준선부터 전체 에너지 변화가 잘리지 않도록 그린다.
+  const yMaxRaw = Math.max(100, initialKE * 1.10);
   const yStep = niceChartStep(yMaxRaw / 5);
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
   const xStep = niceChartStep(totalT / 7);
@@ -1470,24 +1471,30 @@ function animate(ts) {
     const frontX = bikeX + 32;
     const smokeY = WHEEL_Y + 16;
     const smokes = [
-      ["smoke1", rearX - 8 - pulse*10, smokeY - 12, 12 + pulse*7, .55 + pulse*.25],
-      ["smoke2", rearX - 28 - pulse*16, smokeY - 24, 18 + pulse*10, .38 + pulse*.24],
-      ["smoke3", rearX - 50 - pulse*22, smokeY - 6, 12 + pulse*8, .28 + pulse*.20],
-      ["smoke4", rearX - 70 - pulse*28, smokeY - 28, 15 + pulse*9, .20 + pulse*.18],
-      ["smoke5", frontX - 6 - pulse*8, smokeY - 10, 10 + pulse*6, .35 + pulse*.18],
-      ["smoke6", frontX - 25 - pulse*13, smokeY - 22, 14 + pulse*8, .24 + pulse*.16],
-      ["smoke7", rearX - 18 - pulse*18, smokeY + 8, 9 + pulse*6, .30 + pulse*.18],
-      ["smoke8", frontX - 40 - pulse*18, smokeY + 4, 11 + pulse*7, .18 + pulse*.15],
+      ["smoke1", rearX - 8 - pulse*10, smokeY - 12, 16 + pulse*8, .82 + pulse*.12],
+      ["smoke2", rearX - 28 - pulse*16, smokeY - 24, 22 + pulse*11, .70 + pulse*.14],
+      ["smoke3", rearX - 50 - pulse*22, smokeY - 6, 16 + pulse*9, .58 + pulse*.16],
+      ["smoke4", rearX - 70 - pulse*28, smokeY - 28, 19 + pulse*10, .45 + pulse*.18],
+      ["smoke5", frontX - 6 - pulse*8, smokeY - 10, 14 + pulse*7, .70 + pulse*.14],
+      ["smoke6", frontX - 25 - pulse*13, smokeY - 22, 18 + pulse*9, .56 + pulse*.16],
+      ["smoke7", rearX - 18 - pulse*18, smokeY + 8, 13 + pulse*7, .60 + pulse*.16],
+      ["smoke8", frontX - 40 - pulse*18, smokeY + 4, 15 + pulse*8, .48 + pulse*.16],
     ];
     for (const [id, cx, cy, r, op] of smokes) {
       setAttr(id, "cx", cx);
       setAttr(id, "cy", cy);
       setAttr(id, "r", r);
       setAttr(id, "opacity", op);
+      const smokeEl = document.getElementById(id);
+      if (smokeEl) smokeEl.style.opacity = op;
     }
   } else {
     setAttr("skidLine", "opacity", 0);
-    for (const id of ["smoke1","smoke2","smoke3","smoke4","smoke5","smoke6","smoke7","smoke8"]) setAttr(id, "opacity", 0);
+    for (const id of ["smoke1","smoke2","smoke3","smoke4","smoke5","smoke6","smoke7","smoke8"]) {
+      setAttr(id, "opacity", 0);
+      const smokeEl = document.getElementById(id);
+      if (smokeEl) smokeEl.style.opacity = 0;
+    }
   }
 
   setText("phaseText", phase);
@@ -1503,7 +1510,11 @@ function animate(ts) {
     setText("clockText", `총 물리 시간 ${totalPhysical.toFixed(2)}초 / 실제 재생 시간 ${(totalPhysical / DATA.playbackSpeed).toFixed(2)}초`);
     drawTimeCharts(totalPhysical);
     setAttr("skidLine", "opacity", 0.35);
-    for (const id of ["smoke1","smoke2","smoke3","smoke4","smoke5","smoke6","smoke7","smoke8"]) setAttr(id, "opacity", 0);
+    for (const id of ["smoke1","smoke2","smoke3","smoke4","smoke5","smoke6","smoke7","smoke8"]) {
+      setAttr(id, "opacity", 0);
+      const smokeEl = document.getElementById(id);
+      if (smokeEl) smokeEl.style.opacity = 0;
+    }
   }
 }
 
@@ -1518,7 +1529,7 @@ restart();
 
 
 def show_simulation(data: dict):
-    components.html(build_simulation_html(data), height=1280, scrolling=False)
+    components.html(build_simulation_html(data), height=1600, scrolling=False)
 
 
 # ------------------------------------------------------------
