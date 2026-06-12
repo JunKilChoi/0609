@@ -831,10 +831,19 @@ def build_simulation_html(data: dict) -> str:
   .small { fill: #64748b; font-size: 12px; font-weight: 800; }
   .road-line { stroke: rgba(255,255,255,.55); stroke-width: 3; stroke-dasharray: 21 16; stroke-linecap: round; }
   .wheel { fill: #f8fafc; stroke: #0f172a; stroke-width: 5; }
-  .spoke { stroke: #0f172a; stroke-width: 2; opacity: .75; }
+  .tire { fill: #111827; stroke: #020617; stroke-width: 2; }
+  .rim { fill: #f8fafc; stroke: #e5e7eb; stroke-width: 4; }
+  .inner-rim { fill: none; stroke: #64748b; stroke-width: 2.2; opacity: .9; }
+  .hub { fill: #0f172a; stroke: #ffffff; stroke-width: 1.5; }
+  .spoke { stroke: #334155; stroke-width: 1.7; opacity: .95; }
   .frame { stroke: #dc2626; stroke-width: 6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .frame-highlight { stroke: #ef4444; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+  .fork { stroke: #1f2937; stroke-width: 5.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .chain { stroke: #111827; stroke-width: 3.2; fill: none; stroke-linecap: round; opacity: .95; }
+  .bike-detail { stroke: #0f172a; stroke-width: 4.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .black-line { stroke: #0f172a; stroke-width: 6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .rider { stroke: #111827; stroke-width: 7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .rider-thin { stroke: #111827; stroke-width: 5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .head { fill: #111827; }
   .smoke { fill: #374151; stroke: #111827; stroke-width: 1.8; }
   .skid { stroke: #111827; stroke-width: 6; stroke-linecap: round; opacity: 0; }
@@ -931,35 +940,81 @@ def build_simulation_html(data: dict) -> str:
       <line id="skidLine" class="skid" x1="0" y1="0" x2="0" y2="0"/>
 
       <g id="bike" transform="translate(78 250)">
-        <ellipse cx="0" cy="45" rx="72" ry="11" fill="rgba(15,23,42,.16)"/>
+        <ellipse cx="5" cy="61" rx="92" ry="14" fill="rgba(15,23,42,.18)"/>
 
+        <!-- 뒷바퀴: 타이어, 림, 허브, 촘촘한 스포크 -->
         <g id="rearWheel">
-          <circle class="wheel" cx="-48" cy="28" r="27"/>
-          <line class="spoke" x1="-48" y1="1" x2="-48" y2="55"/>
-          <line class="spoke" x1="-75" y1="28" x2="-21" y2="28"/>
-          <line class="spoke" x1="-67" y1="9" x2="-29" y2="47"/>
-          <line class="spoke" x1="-67" y1="47" x2="-29" y2="9"/>
+          <circle class="tire" cx="-48" cy="28" r="32"/>
+          <circle class="rim" cx="-48" cy="28" r="26"/>
+          <circle class="inner-rim" cx="-48" cy="28" r="21"/>
+          <line class="spoke" x1="-48" y1="28" x2="-48" y2="-1"/>
+          <line class="spoke" x1="-48" y1="28" x2="-48" y2="57"/>
+          <line class="spoke" x1="-48" y1="28" x2="-77" y2="28"/>
+          <line class="spoke" x1="-48" y1="28" x2="-19" y2="28"/>
+          <line class="spoke" x1="-48" y1="28" x2="-68" y2="8"/>
+          <line class="spoke" x1="-48" y1="28" x2="-28" y2="48"/>
+          <line class="spoke" x1="-48" y1="28" x2="-68" y2="48"/>
+          <line class="spoke" x1="-48" y1="28" x2="-28" y2="8"/>
+          <line class="spoke" x1="-48" y1="28" x2="-59" y2="2"/>
+          <line class="spoke" x1="-48" y1="28" x2="-37" y2="54"/>
+          <line class="spoke" x1="-48" y1="28" x2="-74" y2="17"/>
+          <line class="spoke" x1="-48" y1="28" x2="-22" y2="39"/>
+          <circle class="hub" cx="-48" cy="28" r="4.3"/>
         </g>
 
+        <!-- 앞바퀴: 뒷바퀴와 같은 구조 -->
         <g id="frontWheel">
-          <circle class="wheel" cx="62" cy="28" r="27"/>
-          <line class="spoke" x1="62" y1="1" x2="62" y2="55"/>
-          <line class="spoke" x1="35" y1="28" x2="89" y2="28"/>
-          <line class="spoke" x1="43" y1="9" x2="81" y2="47"/>
-          <line class="spoke" x1="43" y1="47" x2="81" y2="9"/>
+          <circle class="tire" cx="62" cy="28" r="32"/>
+          <circle class="rim" cx="62" cy="28" r="26"/>
+          <circle class="inner-rim" cx="62" cy="28" r="21"/>
+          <line class="spoke" x1="62" y1="28" x2="62" y2="-1"/>
+          <line class="spoke" x1="62" y1="28" x2="62" y2="57"/>
+          <line class="spoke" x1="62" y1="28" x2="33" y2="28"/>
+          <line class="spoke" x1="62" y1="28" x2="91" y2="28"/>
+          <line class="spoke" x1="62" y1="28" x2="42" y2="8"/>
+          <line class="spoke" x1="62" y1="28" x2="82" y2="48"/>
+          <line class="spoke" x1="62" y1="28" x2="42" y2="48"/>
+          <line class="spoke" x1="62" y1="28" x2="82" y2="8"/>
+          <line class="spoke" x1="62" y1="28" x2="51" y2="2"/>
+          <line class="spoke" x1="62" y1="28" x2="73" y2="54"/>
+          <line class="spoke" x1="62" y1="28" x2="36" y2="17"/>
+          <line class="spoke" x1="62" y1="28" x2="88" y2="39"/>
+          <circle class="hub" cx="62" cy="28" r="4.3"/>
         </g>
 
-        <path class="frame" d="M -48 28 L -14 -22 L 18 28 L -48 28 M -14 -22 L 62 28 M 18 28 L 62 28 M -14 -22 L -4 -50 M 45 -13 L 62 28 M 45 -13 L 72 -22"/>
-        <line class="black-line" x1="-21" y1="-54" x2="11" y2="-54"/>
-        <line class="black-line" x1="61" y1="-23" x2="78" y2="-28"/>
+        <!-- 체인과 크랭크 -->
+        <path class="chain" d="M -48 28 L -4 20 L 62 28"/>
+        <path class="chain" d="M -48 34 L -4 26 L 62 34" opacity=".65"/>
+        <circle cx="-4" cy="20" r="10" fill="#f8fafc" stroke="#111827" stroke-width="3"/>
+        <circle cx="-4" cy="20" r="3.4" fill="#111827"/>
+        <line class="bike-detail" x1="-4" y1="20" x2="17" y2="30"/>
+        <line class="bike-detail" x1="-4" y1="20" x2="-24" y2="10"/>
+        <circle cx="18" cy="31" r="3.4" fill="#111827"/>
+        <circle cx="-25" cy="9" r="3.4" fill="#111827"/>
 
-        <circle class="head" cx="-3" cy="-91" r="13"/>
-        <path class="rider" d="M -4 -76 L 14 -44"/>
-        <path class="rider" d="M 6 -61 L 45 -18"/>
-        <path class="rider" d="M 12 -44 L -15 -22"/>
-        <path class="rider" d="M 12 -44 L 18 28"/>
-        <path class="rider" d="M -15 -22 L -4 -50"/>
-        <path class="rider" d="M 18 28 L 35 12"/>
+        <!-- 자전거 프레임: 다이아몬드 프레임, 포크, 핸들바, 안장 -->
+        <path class="frame" d="M -48 28 L -4 20 L 62 28"/>
+        <path class="frame" d="M -48 28 L -20 -28 L -4 20 L 43 -24 L 62 28"/>
+        <path class="frame" d="M -20 -28 L 43 -24 L -4 20"/>
+        <path class="frame-highlight" d="M -45 24 L -5 17 L 58 24"/>
+        <path class="fork" d="M 43 -24 L 54 -6 L 62 28"/>
+        <path class="fork" d="M 53 -8 L 70 -26"/>
+
+        <line class="bike-detail" x1="-20" y1="-28" x2="-26" y2="-50"/>
+        <path class="black-line" d="M -41 -53 L -13 -53"/>
+        <path class="black-line" d="M 69 -27 L 87 -32"/>
+        <path class="bike-detail" d="M 82 -34 C 91 -38, 94 -31, 87 -25"/>
+
+        <!-- 탑승자: 안장에 앉아 상체를 앞으로 숙이고 핸들바를 잡는 형태 -->
+        <circle class="head" cx="-16" cy="-92" r="14"/>
+        <path class="rider" d="M -16 -77 L 0 -47 L 11 -35"/>
+        <path class="rider" d="M -4 -62 L 35 -35 L 72 -28"/>
+        <path class="rider-thin" d="M 1 -57 L 40 -31 L 83 -30"/>
+        <path class="rider" d="M 7 -38 L -5 20"/>
+        <path class="rider-thin" d="M -5 20 L 18 31"/>
+        <path class="rider" d="M 5 -38 L 25 -2 L 62 28"/>
+        <path class="rider-thin" d="M -16 -77 L -28 -52"/>
+        <path class="rider-thin" d="M -28 -52 L -20 -28"/>
       </g>
     </svg>
 
