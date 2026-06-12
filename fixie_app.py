@@ -1874,7 +1874,7 @@ hr {
 
 
 # ------------------------------------------------------------
-# 화면 상단: 제목 + 메인 화면 입력 패널
+# 화면 상단: 제목 + 안내, 입력값은 사이드바에서 조절
 # ------------------------------------------------------------
 st.markdown("<div class='main-title'>🚲 픽시 자전거 정지거리와 이차함수</div>", unsafe_allow_html=True)
 st.markdown(
@@ -1886,142 +1886,150 @@ st.markdown("<div class='section-title'>⚙️ 조건 설정</div>", unsafe_allo
 st.markdown(
     """
 <div class='info-box'>
-사이드바는 페이지 이동 영역으로 비워두고, 비교군 설정과 시뮬레이션 배속은 메인 화면 안쪽에서 조절합니다.
-비교군 1은 자전거 시뮬레이션의 기준값이며, 비교군 2·3은 이차함수 그래프에 함께 표시됩니다.
+비교군 1, 2, 3의 설정은 왼쪽 사이드바에서 조절합니다.
+Streamlit의 페이지 이동 메뉴는 사이드바 상단에 그대로 유지되며, 아래쪽에 조건 설정 패널이 배치됩니다.
 </div>
 """,
     unsafe_allow_html=True,
 )
 
-with st.expander("비교군 및 시뮬레이션 설정 열기 / 닫기", expanded=True):
-    group_col1, group_col2, group_col3 = st.columns(3)
+# ------------------------------------------------------------
+# 왼쪽 사이드바: 비교군 1, 2, 3 설정
+# ------------------------------------------------------------
+with st.sidebar:
+    st.markdown("## ⚙️ 조건 설정")
+    st.caption("비교군 1은 시뮬레이션과 VPython 코드의 기준값입니다.")
+    st.divider()
 
-    with group_col1:
-        st.markdown("### 비교군 1: 시뮬레이션 기준")
-        bike_mass = st.slider(
-            "질량(kg)",
-            min_value=40.0,
-            max_value=100.0,
-            value=65.0,
-            step=1.0,
-            key="mass1_main",
-            help="현실감을 위해 사람+자전거 전체 질량 범위로 두었습니다. 단순 마찰 모델에서는 정지거리 계산식에서 질량이 약분됩니다.",
-        )
-        speed_kmh = st.slider(
-            "초기 속도 x (km/h)",
-            min_value=0,
-            max_value=60,
-            value=30,
-            step=1,
-            key="speed1_main",
-        )
-        reaction_time = st.slider(
-            "반응 시간(초)",
-            min_value=0.20,
-            max_value=2.50,
-            value=1.00,
-            step=0.01,
-            format="%.2f",
-            key="reaction1_main",
-        )
-        road_label = st.selectbox(
-            "노면 상태",
-            list(ROAD_OPTIONS.keys()),
-            index=0,
-            key="road1_main",
-        )
-        mu = ROAD_OPTIONS[road_label]["mu"]
-        playback_speed = st.slider(
-            "시뮬레이션 배속",
-            min_value=0.1,
-            max_value=1.0,
-            value=1.0,
-            step=0.1,
-            key="playback_speed_main",
-            help="1.0배속이면 물리 시간 1초가 실제 화면에서도 1초입니다. 0.1배속이면 10배 느리게 관찰합니다.",
-        )
+    st.markdown("### 비교군 1")
+    bike_mass = st.slider(
+        "비교군 1 질량(kg)",
+        min_value=40.0,
+        max_value=100.0,
+        value=65.0,
+        step=1.0,
+        key="mass1_sidebar",
+        help="현실감을 위해 사람+자전거 전체 질량 범위로 두었습니다. 단순 마찰 모델에서는 정지거리 계산식에서 질량이 약분됩니다.",
+    )
+    speed_kmh = st.slider(
+        "비교군 1 초기 속도 x (km/h)",
+        min_value=0,
+        max_value=60,
+        value=30,
+        step=1,
+        key="speed1_sidebar",
+    )
+    reaction_time = st.slider(
+        "비교군 1 반응 시간(초)",
+        min_value=0.20,
+        max_value=2.50,
+        value=1.00,
+        step=0.01,
+        format="%.2f",
+        key="reaction1_sidebar",
+    )
+    road_label = st.selectbox(
+        "비교군 1 노면 상태",
+        list(ROAD_OPTIONS.keys()),
+        index=0,
+        key="road1_sidebar",
+    )
+    mu = ROAD_OPTIONS[road_label]["mu"]
 
-    with group_col2:
-        st.markdown("### 비교군 2")
-        use_group2 = st.checkbox("비교군 2 표시", value=True, key="use_group2_main")
-        mass2 = st.slider(
-            "질량(kg)",
-            40.0,
-            100.0,
-            65.0,
-            1.0,
-            key="mass2",
-            disabled=not use_group2,
-        )
-        speed2 = st.slider(
-            "초기 속도(km/h)",
-            0,
-            60,
-            40,
-            1,
-            key="speed2",
-            disabled=not use_group2,
-        )
-        reaction2 = st.slider(
-            "반응 시간(초)",
-            0.20,
-            2.50,
-            1.00,
-            0.01,
-            format="%.2f",
-            key="reaction2",
-            disabled=not use_group2,
-        )
-        road2 = st.selectbox(
-            "노면 상태",
-            list(ROAD_OPTIONS.keys()),
-            index=1,
-            key="road2",
-            disabled=not use_group2,
-        )
-        if not use_group2:
-            mass2, speed2, reaction2, road2 = 65.0, 40, 1.00, "젖은 아스팔트"
+    playback_speed = st.slider(
+        "시뮬레이션 배속",
+        min_value=0.1,
+        max_value=1.0,
+        value=1.0,
+        step=0.1,
+        key="playback_speed_sidebar",
+        help="1.0배속이면 물리 시간 1초가 실제 화면에서도 1초입니다. 0.1배속이면 10배 느리게 관찰합니다.",
+    )
 
-    with group_col3:
-        st.markdown("### 비교군 3")
-        use_group3 = st.checkbox("비교군 3 표시", value=True, key="use_group3_main")
-        mass3 = st.slider(
-            "질량(kg)",
-            40.0,
-            100.0,
-            65.0,
-            1.0,
-            key="mass3",
-            disabled=not use_group3,
-        )
-        speed3 = st.slider(
-            "초기 속도(km/h)",
-            0,
-            60,
-            50,
-            1,
-            key="speed3",
-            disabled=not use_group3,
-        )
-        reaction3 = st.slider(
-            "반응 시간(초)",
-            0.20,
-            2.50,
-            1.20,
-            0.01,
-            format="%.2f",
-            key="reaction3",
-            disabled=not use_group3,
-        )
-        road3 = st.selectbox(
-            "노면 상태",
-            list(ROAD_OPTIONS.keys()),
-            index=2,
-            key="road3",
-            disabled=not use_group3,
-        )
-        if not use_group3:
-            mass3, speed3, reaction3, road3 = 65.0, 50, 1.20, "모래·낙엽길"
+    st.divider()
+
+    st.markdown("### 비교군 2")
+    use_group2 = st.checkbox("비교군 2 표시", value=True, key="use_group2_sidebar")
+    mass2 = st.slider(
+        "비교군 2 질량(kg)",
+        40.0,
+        100.0,
+        65.0,
+        1.0,
+        key="mass2_sidebar",
+        disabled=not use_group2,
+    )
+    speed2 = st.slider(
+        "비교군 2 초기 속도(km/h)",
+        0,
+        60,
+        40,
+        1,
+        key="speed2_sidebar",
+        disabled=not use_group2,
+    )
+    reaction2 = st.slider(
+        "비교군 2 반응 시간(초)",
+        0.20,
+        2.50,
+        1.00,
+        0.01,
+        format="%.2f",
+        key="reaction2_sidebar",
+        disabled=not use_group2,
+    )
+    road2 = st.selectbox(
+        "비교군 2 노면 상태",
+        list(ROAD_OPTIONS.keys()),
+        index=1,
+        key="road2_sidebar",
+        disabled=not use_group2,
+    )
+    if not use_group2:
+        mass2, speed2, reaction2, road2 = 65.0, 40, 1.00, "젖은 아스팔트"
+
+    st.divider()
+
+    st.markdown("### 비교군 3")
+    use_group3 = st.checkbox("비교군 3 표시", value=True, key="use_group3_sidebar")
+    mass3 = st.slider(
+        "비교군 3 질량(kg)",
+        40.0,
+        100.0,
+        65.0,
+        1.0,
+        key="mass3_sidebar",
+        disabled=not use_group3,
+    )
+    speed3 = st.slider(
+        "비교군 3 초기 속도(km/h)",
+        0,
+        60,
+        50,
+        1,
+        key="speed3_sidebar",
+        disabled=not use_group3,
+    )
+    reaction3 = st.slider(
+        "비교군 3 반응 시간(초)",
+        0.20,
+        2.50,
+        1.20,
+        0.01,
+        format="%.2f",
+        key="reaction3_sidebar",
+        disabled=not use_group3,
+    )
+    road3 = st.selectbox(
+        "비교군 3 노면 상태",
+        list(ROAD_OPTIONS.keys()),
+        index=2,
+        key="road3_sidebar",
+        disabled=not use_group3,
+    )
+    if not use_group3:
+        mass3, speed3, reaction3, road3 = 65.0, 50, 1.20, "모래·낙엽길"
+
 
 # ------------------------------------------------------------
 # 현재 조건 계산
@@ -2191,7 +2199,7 @@ st.markdown(
 st.markdown("### 3-2. 과학(물리): 운동에너지, 마찰력, 일")
 st.markdown(
     """
-달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 $v^2$에 비례하여 커집니다.
+달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 \(v^2\)에 비례하여 커집니다.
 """
 )
 st.latex(r"E_k=\frac{1}{2}mv^2")
@@ -2215,7 +2223,7 @@ st.latex(r"\frac{1}{2}mv^2=\mu mg\cdot d")
 
 st.markdown(
     """
-위 식에서 질량 $m$은 양쪽에 모두 들어 있으므로 약분됩니다.
+위 식에서 질량 \(m\)은 양쪽에 모두 들어 있으므로 약분됩니다.
 그래서 이 단순 모델에서는 자전거+탑승자 질량을 바꾸어도 정지거리가 직접 변하지 않습니다.
 """
 )
@@ -2240,7 +2248,7 @@ st.markdown(
 <div class='info-box'>
 정리하면, 픽시 자전거의 위험성은 속도가 조금 증가할 때 정지거리가 단순히 조금 늘어나는 정도가 아니라,
 제동거리 항 때문에 <b>제곱에 가깝게 빠르게 증가한다</b>는 데 있습니다.
-특히 노면 마찰계수 $mu$가 작으면 이차항의 계수 $A$가 커져 그래프가 더 가파르게 올라갑니다.
+특히 노면 마찰계수 \(\mu\)가 작으면 이차항의 계수 \(A\)가 커져 그래프가 더 가파르게 올라갑니다.
 </div>
 """,
     unsafe_allow_html=True,
