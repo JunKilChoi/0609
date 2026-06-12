@@ -2010,8 +2010,7 @@ st.markdown("<div class='section-title'>⚙️ 조건 설정</div>", unsafe_allo
 st.markdown(
     """
 <div class='info-box'>
-비교군 1, 2, 3의 설정은 왼쪽 사이드바에서 조절합니다.
-Streamlit의 페이지 이동 메뉴는 사이드바 상단에 그대로 유지되며, 아래쪽에 조건 설정 패널이 배치됩니다.
+조건 설정은 왼쪽 사이드 바에서 조절할 수 있습니다. 시뮬레이션은 비교군 1의 조건을 통해 실행됩니다. 비교군2, 3을 통해 여러 상황에서의 제동 거리를 비교할 수 있습니다.
 </div>
 """,
     unsafe_allow_html=True,
