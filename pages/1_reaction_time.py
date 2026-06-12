@@ -1,4 +1,3 @@
-
 import json
 import streamlit as st
 import streamlit.components.v1 as components
@@ -6,6 +5,8 @@ import streamlit.components.v1 as components
 # ============================================================
 # 반응 속도 측정 페이지
 # 저장 위치 예시:
+# pages/1_reaction_time.py
+# 또는
 # pages/1_반응_속도_측정.py
 # ============================================================
 
@@ -60,7 +61,7 @@ st.markdown(
 
 st.markdown("<div class='main-title'>⚡ 반응 속도 측정</div>", unsafe_allow_html=True)
 st.markdown(
-    "<div class='main-subtitle'>화면 색이 바뀌는 순간 클릭하여 자신의 반응 시간을 측정합니다.</div>",
+    "<div class='main-subtitle'>화면 색이 갑자기 바뀌는 순간 클릭하여 자신의 반응 시간을 측정합니다.</div>",
     unsafe_allow_html=True,
 )
 
@@ -78,20 +79,14 @@ st.markdown(
 with st.sidebar:
     st.header("⚙️ 측정 설정")
     trial_count = st.slider("측정 횟수", 3, 10, 5, 1)
-    min_wait = st.slider("최소 대기 시간(초)", 0.5, 3.0, 1.2, 0.1)
-    max_wait = st.slider("최대 대기 시간(초)", 1.0, 6.0, 3.5, 0.1)
-
-    if max_wait <= min_wait:
-        st.warning("최대 대기 시간은 최소 대기 시간보다 커야 합니다.")
-        max_wait = min_wait + 0.5
-
     st.divider()
-    st.caption("초록색으로 바뀌기 전에 누르면 무효 처리됩니다.")
+    st.caption("대기 시간은 3~5초 사이에서 무작위로 정해집니다.")
+    st.caption("게이지나 카운트다운 없이 갑자기 초록색으로 바뀝니다.")
 
 settings = {
     "trialCount": int(trial_count),
-    "minWait": float(min_wait),
-    "maxWait": float(max_wait),
+    "minWait": 3.0,
+    "maxWait": 5.0,
 }
 
 reaction_html = """
@@ -214,7 +209,7 @@ reaction_html = """
     text-align: center;
     cursor: pointer;
     user-select: none;
-    transition: background .14s ease, transform .12s ease;
+    transition: background .08s ease, transform .12s ease;
   }
 
   .test-zone.wait {
@@ -270,22 +265,18 @@ reaction_html = """
     backdrop-filter: blur(8px);
   }
 
-  .progress {
+  .secret-wait-note {
     position: absolute;
     bottom: 16px;
     left: 16px;
     right: 16px;
-    height: 9px;
-    background: rgba(255,255,255,.24);
+    padding: 9px 12px;
     border-radius: 999px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    width: 0%;
-    height: 100%;
-    background: rgba(255,255,255,.78);
-    border-radius: 999px;
+    background: rgba(255,255,255,.18);
+    color: white;
+    font-size: 13px;
+    font-weight: 850;
+    backdrop-filter: blur(8px);
   }
 
   .metric-grid {
@@ -311,9 +302,17 @@ reaction_html = """
 
   .metric .v {
     color: var(--ink);
-    font-size: 27px;
+    font-size: 24px;
     font-weight: 1000;
     letter-spacing: -0.04em;
+    line-height: 1.05;
+  }
+
+  .metric .s {
+    color: #475569;
+    font-size: 14px;
+    font-weight: 850;
+    margin-top: 4px;
   }
 
   .metric .n {
@@ -331,7 +330,7 @@ reaction_html = """
 
   .result-row {
     display: grid;
-    grid-template-columns: 76px 1fr 76px;
+    grid-template-columns: 76px 1fr 112px;
     gap: 8px;
     align-items: center;
     font-size: 13px;
@@ -352,6 +351,22 @@ reaction_html = """
     background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
     border-radius: 999px;
     transition: width .25s ease;
+  }
+
+  .record-time {
+    text-align: right;
+    line-height: 1.15;
+  }
+
+  .record-time .ms {
+    color: #0f172a;
+    font-weight: 950;
+  }
+
+  .record-time .sec {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
   }
 
   .guide {
@@ -420,8 +435,8 @@ reaction_html = """
     <div>
       <div class="title">⚡ 반응 속도 측정</div>
       <div class="desc">
-        초록색 화면으로 바뀌는 순간 클릭하세요.
-        너무 빨리 누르면 무효입니다.
+        초록색 화면으로 갑자기 바뀌는 순간 클릭하세요.
+        주황색 화면에서 너무 빨리 누르면 무효입니다.
       </div>
     </div>
     <div class="controls">
@@ -441,17 +456,17 @@ reaction_html = """
             초록색 화면이 나타나는 순간 클릭하면 반응 시간이 기록됩니다.
           </div>
         </div>
-        <div class="progress">
-          <div class="progress-fill" id="progressFill"></div>
+        <div class="secret-wait-note" id="secretWaitNote">
+          대기 시간은 보이지 않습니다.
         </div>
       </div>
 
       <div class="guide">
         <b>측정 방법</b><br>
         1. 측정 시작을 누릅니다.<br>
-        2. 주황색 화면에서는 기다립니다.<br>
-        3. 초록색 화면으로 바뀌는 순간 최대한 빠르게 클릭합니다.<br>
-        4. 평균값을 정지거리 시뮬레이터의 반응 시간 값으로 사용합니다.
+        2. 주황색 화면에서는 기다립니다. 남은 시간은 표시되지 않습니다.<br>
+        3. 3~5초 사이의 무작위 시점에 초록색 화면으로 바뀝니다.<br>
+        4. 초록색 화면으로 바뀌는 순간 최대한 빠르게 클릭합니다.
       </div>
 
       <div class="warning">
@@ -464,29 +479,33 @@ reaction_html = """
         <div class="metric">
           <div class="k">최근 기록</div>
           <div class="v" id="latestMs">-</div>
+          <div class="s" id="latestSec">-</div>
           <div class="n">방금 측정한 반응 시간</div>
         </div>
         <div class="metric">
           <div class="k">평균</div>
           <div class="v" id="avgMs">-</div>
+          <div class="s" id="avgSec">-</div>
           <div class="n">시뮬레이터 입력값</div>
         </div>
         <div class="metric">
           <div class="k">최고 기록</div>
           <div class="v" id="bestMs">-</div>
+          <div class="s" id="bestSec">-</div>
           <div class="n">가장 빠른 반응</div>
         </div>
         <div class="metric">
           <div class="k">측정 횟수</div>
           <div class="v" id="trialCount">0/5</div>
-          <div class="n">유효 측정만 포함</div>
+          <div class="s">유효 측정</div>
+          <div class="n">무효 클릭은 제외</div>
         </div>
       </div>
 
       <div class="result-list" id="resultList"></div>
 
       <div class="copy-box" id="copyBox">
-        아직 측정값이 없습니다. 측정이 끝나면 평균 반응 시간이 초 단위로 표시됩니다.
+        아직 측정값이 없습니다. 측정이 끝나면 평균 반응 시간이 ms와 초 단위로 표시됩니다.
       </div>
 
       <div class="guide">
@@ -509,11 +528,9 @@ const SETTINGS = __SETTINGS__;
 let state = "idle";
 let startTime = null;
 let waitTimer = null;
-let progressTimer = null;
 let results = [];
 let earlyCount = 0;
 let currentDelay = 0;
-let waitStart = 0;
 
 const trialTarget = SETTINGS.trialCount;
 const minWaitMs = SETTINGS.minWait * 1000;
@@ -523,8 +540,8 @@ const zone = document.getElementById("testZone");
 const zoneMain = document.getElementById("zoneMain");
 const zoneSub = document.getElementById("zoneSub");
 const trialBadge = document.getElementById("trialBadge");
-const progressFill = document.getElementById("progressFill");
 const resultList = document.getElementById("resultList");
+const secretWaitNote = document.getElementById("secretWaitNote");
 
 function msText(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
@@ -533,7 +550,12 @@ function msText(value) {
 
 function secText(value) {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  return `${(value / 1000).toFixed(2)}초`;
+  return `${(value / 1000).toFixed(3)} s`;
+}
+
+function secTextKorean(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return `${(value / 1000).toFixed(3)}초`;
 }
 
 function average(arr) {
@@ -564,8 +586,11 @@ function updateStats() {
   const med = median(results);
 
   document.getElementById("latestMs").textContent = msText(latest);
+  document.getElementById("latestSec").textContent = secText(latest);
   document.getElementById("avgMs").textContent = msText(avg);
+  document.getElementById("avgSec").textContent = secText(avg);
   document.getElementById("bestMs").textContent = msText(best);
+  document.getElementById("bestSec").textContent = secText(best);
   document.getElementById("trialCount").textContent = `${results.length}/${trialTarget}`;
 
   resultList.innerHTML = "";
@@ -593,8 +618,12 @@ function updateStats() {
     track.appendChild(bar);
 
     const text = document.createElement("div");
-    text.style.textAlign = "right";
-    text.textContent = value !== undefined ? msText(value) : "-";
+    text.className = "record-time";
+    if (value !== undefined) {
+      text.innerHTML = `<div class="ms">${msText(value)}</div><div class="sec">${secText(value)}</div>`;
+    } else {
+      text.innerHTML = `<div class="ms">-</div><div class="sec">-</div>`;
+    }
 
     row.appendChild(label);
     row.appendChild(track);
@@ -604,18 +633,21 @@ function updateStats() {
 
   const copyBox = document.getElementById("copyBox");
   if (avg === null) {
-    copyBox.textContent = "아직 측정값이 없습니다. 측정이 끝나면 평균 반응 시간이 초 단위로 표시됩니다.";
+    copyBox.textContent = "아직 측정값이 없습니다. 측정이 끝나면 평균 반응 시간이 ms와 초 단위로 표시됩니다.";
   } else {
     copyBox.innerHTML = `
       평균 반응 시간: <b>${msText(avg)}</b> = <b>${secText(avg)}</b><br>
-      최고 기록: <b>${msText(best)}</b>, 중앙값: <b>${msText(med)}</b>, 가장 느린 기록: <b>${msText(worst)}</b><br>
-      정지거리 시뮬레이터의 반응 시간에는 <b>${(avg / 1000).toFixed(2)}초</b>를 넣으면 됩니다.
+      최고 기록: <b>${msText(best)}</b> = <b>${secText(best)}</b><br>
+      중앙값: <b>${msText(med)}</b> = <b>${secText(med)}</b><br>
+      가장 느린 기록: <b>${msText(worst)}</b> = <b>${secText(worst)}</b><br>
+      정지거리 시뮬레이터의 반응 시간에는 <b>${(avg / 1000).toFixed(3)}초</b>를 넣으면 됩니다.
     `;
   }
 
   if (results.length >= trialTarget) {
-    setZone("done", "측정 완료", `평균 반응 시간은 ${msText(avg)}입니다. 다시 측정하려면 측정 시작을 누르세요.`);
+    setZone("done", "측정 완료", `평균 반응 시간은 ${msText(avg)} = ${secText(avg)}입니다. 다시 측정하려면 측정 시작을 누르세요.`);
     trialBadge.textContent = "완료";
+    secretWaitNote.textContent = "측정 완료";
   } else {
     trialBadge.textContent = `${results.length + 1}/${trialTarget}회차`;
   }
@@ -623,7 +655,6 @@ function updateStats() {
 
 function startTest() {
   clearTimeout(waitTimer);
-  clearInterval(progressTimer);
 
   if (results.length >= trialTarget) {
     results = [];
@@ -641,26 +672,17 @@ function beginTrial() {
   }
 
   clearTimeout(waitTimer);
-  clearInterval(progressTimer);
 
   currentDelay = minWaitMs + Math.random() * (maxWaitMs - minWaitMs);
-  waitStart = performance.now();
 
-  setZone("wait", "기다리세요...", "아직 누르면 안 됩니다. 초록색으로 바뀌는 순간 클릭하세요.");
+  setZone("wait", "기다리세요...", "언제 바뀔지 알 수 없습니다. 초록색으로 바뀌는 순간 클릭하세요.");
   trialBadge.textContent = `${results.length + 1}/${trialTarget}회차`;
-  progressFill.style.width = "0%";
-
-  progressTimer = setInterval(() => {
-    const elapsed = performance.now() - waitStart;
-    const progress = Math.min(100, (elapsed / currentDelay) * 100);
-    progressFill.style.width = `${progress}%`;
-  }, 30);
+  secretWaitNote.textContent = "대기 시간은 숨겨져 있습니다.";
 
   waitTimer = setTimeout(() => {
-    clearInterval(progressTimer);
-    progressFill.style.width = "100%";
     startTime = performance.now();
     setZone("ready", "지금 클릭!", "초록색으로 바뀌었습니다. 최대한 빠르게 클릭하세요.");
+    secretWaitNote.textContent = "지금 클릭!";
   }, currentDelay);
 }
 
@@ -672,10 +694,9 @@ function handleZoneClick() {
   if (state === "wait") {
     earlyCount += 1;
     clearTimeout(waitTimer);
-    clearInterval(progressTimer);
-    progressFill.style.width = "0%";
     setZone("bad", "너무 빨랐습니다", "초록색으로 바뀐 뒤에 클릭해야 합니다. 잠시 후 같은 회차를 다시 시작합니다.");
     trialBadge.textContent = "무효";
+    secretWaitNote.textContent = "무효 클릭";
     setTimeout(beginTrial, 1000);
     return;
   }
@@ -684,11 +705,11 @@ function handleZoneClick() {
     const reactionTime = performance.now() - startTime;
     results.push(reactionTime);
     clearTimeout(waitTimer);
-    clearInterval(progressTimer);
     updateStats();
 
     if (results.length < trialTarget) {
-      setZone("idle", `${Math.round(reactionTime)} ms`, "기록되었습니다. 다음 회차를 곧 시작합니다.");
+      setZone("idle", `${Math.round(reactionTime)} ms = ${(reactionTime / 1000).toFixed(3)} s`, "기록되었습니다. 다음 회차를 곧 시작합니다.");
+      secretWaitNote.textContent = "다음 회차 준비";
       setTimeout(beginTrial, 850);
     }
   }
@@ -696,15 +717,13 @@ function handleZoneClick() {
 
 function resetTest() {
   clearTimeout(waitTimer);
-  clearInterval(progressTimer);
   results = [];
   earlyCount = 0;
   startTime = null;
   currentDelay = 0;
-  waitStart = 0;
-  progressFill.style.width = "0%";
   setZone("idle", "측정 시작을 누르세요", "초록색 화면이 나타나는 순간 클릭하면 반응 시간이 기록됩니다.");
   trialBadge.textContent = "대기 중";
+  secretWaitNote.textContent = "대기 시간은 보이지 않습니다.";
   updateStats();
 }
 
@@ -719,14 +738,21 @@ function copyResult() {
   const worst = Math.max(...results);
   const med = median(results);
 
+  const lines = results.map((value, index) =>
+    `- ${index + 1}회차: ${Math.round(value)} ms = ${(value / 1000).toFixed(3)} s`
+  ).join("\\n");
+
   const text =
 `반응 속도 측정 결과
 - 유효 측정 횟수: ${results.length}회
-- 평균 반응 시간: ${Math.round(avg)} ms = ${(avg / 1000).toFixed(2)}초
-- 최고 기록: ${Math.round(best)} ms
-- 중앙값: ${Math.round(med)} ms
-- 가장 느린 기록: ${Math.round(worst)} ms
-- 정지거리 시뮬레이터 입력값: ${(avg / 1000).toFixed(2)}초`;
+- 평균 반응 시간: ${Math.round(avg)} ms = ${(avg / 1000).toFixed(3)} s
+- 최고 기록: ${Math.round(best)} ms = ${(best / 1000).toFixed(3)} s
+- 중앙값: ${Math.round(med)} ms = ${(med / 1000).toFixed(3)} s
+- 가장 느린 기록: ${Math.round(worst)} ms = ${(worst / 1000).toFixed(3)} s
+- 정지거리 시뮬레이터 입력값: ${(avg / 1000).toFixed(3)}초
+
+회차별 기록
+${lines}`;
 
   navigator.clipboard.writeText(text).then(() => {
     alert("측정 결과를 복사했습니다.");
@@ -766,9 +792,9 @@ st.markdown(
 예를 들어 평균 반응 시간이 `420 ms`라면,
 
 ```text
-420 ms = 0.42초
+420 ms = 0.420초
 ```
 
-이므로 정지거리 시뮬레이터의 반응 시간에 `0.42초`를 넣으면 됩니다.
+이므로 정지거리 시뮬레이터의 반응 시간에 `0.420초`를 넣으면 됩니다.
 """
 )
