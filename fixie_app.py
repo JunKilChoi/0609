@@ -284,7 +284,7 @@ def build_interactive_graph_html(graph_data: dict) -> str:
 <div class="wrap">
   <div class="top">
     <div>
-      <div class="title">📈 이차함수 그래프: 속도에 따른 제동 거리</div>
+      <div class="title">📈 이차함수 그래프: 드래그로 이동, 휠로 확대·축소</div>
       <div class="sub">실제 속도 영역 x ≥ 0은 실선, 수학적 확장 영역 x &lt; 0은 점선입니다. 여러 조건의 그래프를 중첩해 비교할 수 있습니다.</div>
     </div>
     <div class="buttons">
@@ -1930,10 +1930,12 @@ st.markdown(
     """
 <style>
 .block-container {
+    padding-top: 2.4rem !important;
     padding-top: 1.4rem;
     padding-bottom: 3.2rem;
 }
 .main-title {
+    margin-top: 0.6rem;
     font-size: 2.35rem;
     font-weight: 950;
     letter-spacing: -0.045em;
@@ -2008,7 +2010,8 @@ st.markdown("<div class='section-title'>⚙️ 조건 설정</div>", unsafe_allo
 st.markdown(
     """
 <div class='info-box'>
-왼쪽 사이드바에서 여러가지 조건을 설정할 수 있습니다. 비교군 2, 3을 통해 다양한 상황에서의 제동 거리를 비교할 수 있습니다.
+비교군 1, 2, 3의 설정은 왼쪽 사이드바에서 조절합니다.
+Streamlit의 페이지 이동 메뉴는 사이드바 상단에 그대로 유지되며, 아래쪽에 조건 설정 패널이 배치됩니다.
 </div>
 """,
     unsafe_allow_html=True,
@@ -2454,7 +2457,7 @@ with c_inv2:
     margin = available_distance - current_total_for_personal["total_stopping_distance"]
 
     st.metric(
-        "5 m 안에 멈추기 위한 최대 속도",
+        "5 m 안에 멈추기 위한 최대 속력",
         f"{safe_speed_kmh:.1f} km/h",
         delta=f"현재 비교군 1 속도 {float(speed_kmh):.0f} km/h",
     )
@@ -2470,7 +2473,7 @@ with c_inv2:
 
 st.latex(r"S = vt_r + \frac{v^2}{2\mu g}")
 
-st.markdown("#### 근의 공식으로 최대 속도 구하기")
+st.markdown("#### 근의 공식으로 최대 속력 구하기")
 st.markdown(
     """
 위 식에서 멈출 수 있는 거리 $S$, 반응 시간 $t_r$, 마찰계수 $\mu$, 중력가속도 $g$가 정해져 있다고 보면,
@@ -2490,8 +2493,7 @@ st.latex(r"v=\frac{-2\mu g t_r\pm\sqrt{(2\mu g t_r)^2+8\mu gS}}{2}")
 
 st.markdown(
     """
-속력(속도의 크기)은 음수가 될 수 없으므로, 물리적으로 의미 있는 해는 양의 근입니다.
-(속도는 빠르기와 운동의 방향을 포함한 개념이지만, 속력은 빠르기만 있는 개념이기 때문에 음수가 될 수 없습니다.)
+여기서 구하는 값은 방향을 포함한 속도가 아니라 빠르기만 나타내는 속력입니다. 속도는 빠르기와 운동의 방향을 포함한 개념이지만, 속력은 빠르기만 있는 개념이기 때문에 음수가 될 수 없습니다. 따라서 물리적으로 의미 있는 해는 양의 근입니다.
 """
 )
 st.latex(r"v=-\mu g t_r+\sqrt{(\mu g t_r)^2+2\mu gS}")
@@ -2504,7 +2506,7 @@ st.markdown(
 <div class='info-box'>
 현재 계산에서는 <b>S={available_distance:.1f} m</b>, <b>t<sub>r</sub>={personal_reaction_time:.2f} s</b>,
 <b>μ={mu:.2f}</b>, <b>g=9.8 m/s²</b>를 대입합니다.<br>
-따라서 최대 속도는 <b>{inverse_result["speed_ms"]:.2f} m/s</b>,
+따라서 최대 속력은 <b>{inverse_result["speed_ms"]:.2f} m/s</b>,
 즉 <b>{safe_speed_kmh:.1f} km/h</b>입니다.
 </div>
 """,
