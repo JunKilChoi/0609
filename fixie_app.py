@@ -827,6 +827,20 @@ def build_simulation_html(data: dict) -> str:
   .chip { display: inline-flex; align-items: center; gap: 5px; }
   .swatch { display: inline-block; width: 18px; height: 7px; border-radius: 999px; }
   svg { width: 100%; height: auto; display: block; }
+  .sim-scroll {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 18px;
+    background: #eaf6ff;
+    padding-bottom: 6px;
+  }
+  #sim {
+    width: 1080px;
+    max-width: none;
+    height: 430px;
+    display: block;
+  }
   .label { fill: #0f172a; font-size: 14px; font-weight: 950; }
   .small { fill: #64748b; font-size: 12px; font-weight: 800; }
   .road-line { stroke: rgba(255,255,255,.55); stroke-width: 3; stroke-dasharray: 21 16; stroke-linecap: round; }
@@ -879,11 +893,12 @@ def build_simulation_html(data: dict) -> str:
   <div class="topbar">
     <div>
       <div class="title">🚲 실제 시간 기반 시뮬레이션</div>
-      <div class="sub">1배속에서는 물리 시간 1초가 실제 화면에서도 1초입니다. 배속을 낮추면 더 천천히 관찰할 수 있습니다.</div>
+      <div class="sub">1 m 눈금을 기준으로 실제 거리 비율을 유지합니다. 경로가 길어지면 가로 스크롤로 이어서 볼 수 있습니다.</div>
     </div>
     <button onclick="restart()">다시 재생</button>
   </div>
   <div class="panel">
+    <div id="simScroll" class="sim-scroll">
     <svg id="sim" viewBox="0 0 1080 430" aria-label="픽시 자전거 정지거리 시뮬레이션">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
@@ -896,13 +911,15 @@ def build_simulation_html(data: dict) -> str:
         </linearGradient>
       </defs>
 
-      <rect x="0" y="0" width="1080" height="430" fill="url(#sky)"/>
-      <rect x="56" y="238" width="968" height="86" rx="28" fill="url(#roadGrad)"/>
-      <line x1="78" y1="281" x2="1002" y2="281" class="road-line"/>
+      <rect id="skyRect" x="0" y="0" width="1080" height="430" fill="url(#sky)"/>
+      <rect id="roadRect" x="56" y="238" width="968" height="86" rx="28" fill="url(#roadGrad)"/>
+      <line id="centerLine" x1="78" y1="281" x2="1002" y2="281" class="road-line"/>
 
       <rect id="approachBar" x="78" y="338" width="0" height="16" rx="8" fill="rgba(56,189,248,.78)"/>
       <rect id="reactionBar" x="78" y="360" width="0" height="16" rx="8" fill="rgba(245,158,11,.78)"/>
       <rect id="brakeBar" x="78" y="382" width="0" height="16" rx="8" fill="rgba(239,68,68,.78)"/>
+
+      <g id="distanceTickGroup"></g>
 
       <line id="startMark" x1="78" y1="218" x2="78" y2="410" stroke="#0f172a" stroke-width="3"/>
       <line id="dangerMark" x1="78" y1="218" x2="78" y2="410" stroke="#38bdf8" stroke-width="3"/>
@@ -962,6 +979,7 @@ def build_simulation_html(data: dict) -> str:
         <path class="rider" d="M 18 28 L 35 12"/>
       </g>
     </svg>
+    </div>
 
     <div class="legend">
       <span class="chip"><span class="swatch" style="background:var(--approach)"></span>등속 주행: 위험 발견 전</span>
@@ -989,18 +1007,35 @@ def build_simulation_html(data: dict) -> str:
 <script>
 const DATA = __DATA__;
 
-const X0 = 78;      // 자전거 그룹의 시작 translate x
-const X1 = 1002;    // 정지 기준선: 앞바퀴 중심이 도달해야 하는 위치
+// 실제 거리 스케일
+// 이 값이 클수록 1 m가 화면에서 더 길게 보인다.
+// 전체 경로가 길어지면 SVG가 넓어지고, 아래 가로 스크롤로 확인한다.
+const METER_PX = 50;
+
 const ROAD_Y = 250;
 const WHEEL_Y = ROAD_Y + 28;
+const SVG_MIN_WIDTH = 1080;
+const ROAD_LEFT = 56;
+const ROAD_RIGHT_PAD = 56;
 
 // 자전거 SVG 내부 좌표 기준
 // 앞으로 이동한 거리의 기준점은 자전거 몸통 중심이 아니라 앞바퀴 중심이다.
 const REAR_WHEEL_LOCAL_X = -48;
 const FRONT_WHEEL_LOCAL_X = 62;
-const FRONT_REF_START_X = X0 + FRONT_WHEEL_LOCAL_X;
-const FRONT_REF_END_X = X1;
-const VISUAL_PATH_WIDTH = FRONT_REF_END_X - FRONT_REF_START_X;
+
+// 출발 순간 앞바퀴 중심의 화면 좌표.
+// 위험 발견선은 DATA.approachDistance만큼 떨어진 위치에 고정된다.
+const FRONT_REF_START_X = 140;
+const X0 = FRONT_REF_START_X - FRONT_WHEEL_LOCAL_X;
+
+// 전체 실제 경로: 출발 → 위험 발견 → 반응거리 → 제동거리
+const TOTAL_ROUTE_METERS = Math.max(0.001, DATA.approachDistance + DATA.totalStoppingDistance);
+const VISUAL_PATH_WIDTH = TOTAL_ROUTE_METERS * METER_PX;
+const FRONT_REF_END_X = FRONT_REF_START_X + VISUAL_PATH_WIDTH;
+const X1 = FRONT_REF_END_X;
+const SVG_WIDTH = Math.max(SVG_MIN_WIDTH, FRONT_REF_END_X + 130);
+
+const scrollBox = document.getElementById("simScroll");
 
 let raf = null;
 let startReal = null;
@@ -1016,6 +1051,56 @@ function setText(id, val) {
 function fmt(x) {
   if (x >= 100) return `${x.toFixed(0)} m`;
   return `${x.toFixed(1)} m`;
+}
+
+function setupSvgSize() {
+  const sim = document.getElementById("sim");
+  if (sim) {
+    sim.setAttribute("viewBox", `0 0 ${SVG_WIDTH} 430`);
+    sim.style.width = `${SVG_WIDTH}px`;
+  }
+
+  setAttr("skyRect", "width", SVG_WIDTH);
+  setAttr("roadRect", "x", ROAD_LEFT);
+  setAttr("roadRect", "width", Math.max(0, SVG_WIDTH - ROAD_LEFT - ROAD_RIGHT_PAD));
+  setAttr("centerLine", "x1", FRONT_REF_START_X);
+  setAttr("centerLine", "x2", Math.max(FRONT_REF_END_X, SVG_WIDTH - 78));
+}
+
+function setupDistanceTicks() {
+  const group = document.getElementById("distanceTickGroup");
+  if (!group) return;
+  group.innerHTML = "";
+
+  const totalMeters = Math.ceil(TOTAL_ROUTE_METERS);
+  for (let meter = 0; meter <= totalMeters; meter++) {
+    const x = FRONT_REF_START_X + meter * METER_PX;
+    const major = meter % 5 === 0;
+    const y1 = major ? 404 : 412;
+    const y2 = 426;
+
+    const tick = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    tick.setAttribute("x1", x);
+    tick.setAttribute("x2", x);
+    tick.setAttribute("y1", y1);
+    tick.setAttribute("y2", y2);
+    tick.setAttribute("stroke", major ? "#eab308" : "#ffffff");
+    tick.setAttribute("stroke-width", major ? "2.5" : "1.4");
+    tick.setAttribute("opacity", major ? "1" : ".75");
+    group.appendChild(tick);
+
+    if (major) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("x", x);
+      label.setAttribute("y", 424);
+      label.setAttribute("text-anchor", "middle");
+      label.setAttribute("fill", "#facc15");
+      label.setAttribute("font-size", "10");
+      label.setAttribute("font-weight", "900");
+      label.textContent = `${meter}m`;
+      group.appendChild(label);
+    }
+  }
 }
 
 
@@ -1433,31 +1518,28 @@ function drawTimeCharts(currentT) {
 }
 
 function setupMarks() {
-  const totalVisual = DATA.approachDistance + DATA.totalStoppingDistance;
-  const approachRatio = totalVisual <= 0 ? 0 : DATA.approachDistance / totalVisual;
-  const reactionRatio = totalVisual <= 0 ? 0 : DATA.reactionDistance / totalVisual;
-  const brakeRatio = totalVisual <= 0 ? 0 : DATA.brakingDistance / totalVisual;
+  setupSvgSize();
+  setupDistanceTicks();
 
   // 기준점은 자전거 그룹의 translate x가 아니라 앞바퀴 중심이다.
+  // 모든 선 위치는 실제 거리 m × METER_PX로 환산한다.
   const startX = FRONT_REF_START_X;
-  const endX = FRONT_REF_END_X;
-  const pathW = VISUAL_PATH_WIDTH;
-
-  const dangerX = startX + pathW * approachRatio;
-  const brakeX = dangerX + pathW * reactionRatio;
+  const dangerX = startX + DATA.approachDistance * METER_PX;
+  const brakeX = dangerX + DATA.reactionDistance * METER_PX;
+  const stopX = dangerX + DATA.totalStoppingDistance * METER_PX;
 
   setAttr("startMark", "x1", startX);
   setAttr("startMark", "x2", startX);
   setAttr("startText", "x", startX);
 
   setAttr("approachBar", "x", startX);
-  setAttr("approachBar", "width", Math.max(2, pathW*approachRatio));
+  setAttr("approachBar", "width", Math.max(2, DATA.approachDistance * METER_PX));
 
   setAttr("reactionBar", "x", dangerX);
-  setAttr("reactionBar", "width", Math.max(2, pathW*reactionRatio));
+  setAttr("reactionBar", "width", Math.max(2, DATA.reactionDistance * METER_PX));
 
   setAttr("brakeBar", "x", brakeX);
-  setAttr("brakeBar", "width", Math.max(2, pathW*brakeRatio));
+  setAttr("brakeBar", "width", Math.max(2, DATA.brakingDistance * METER_PX));
 
   setAttr("dangerMark", "x1", dangerX);
   setAttr("dangerMark", "x2", dangerX);
@@ -1467,15 +1549,16 @@ function setupMarks() {
   setAttr("brakeMark", "x2", brakeX);
   setAttr("brakeText", "x", brakeX);
 
-  setAttr("stopMark", "x1", endX);
-  setAttr("stopMark", "x2", endX);
-  setAttr("stopText", "x", endX);
+  setAttr("stopMark", "x1", stopX);
+  setAttr("stopMark", "x2", stopX);
+  setAttr("stopText", "x", stopX);
 }
 
 function restart() {
   if (raf) cancelAnimationFrame(raf);
   startReal = null;
   setupMarks();
+  if (scrollBox) scrollBox.scrollLeft = 0;
   drawTimeCharts(0);
   raf = requestAnimationFrame(animate);
 }
@@ -1523,17 +1606,19 @@ function animate(ts) {
 
   s = Math.max(0, Math.min(DATA.approachDistance + DATA.totalStoppingDistance, s));
 
-  const totalVisual = Math.max(0.001, DATA.approachDistance + DATA.totalStoppingDistance);
-  const fraction = s / totalVisual;
-
-  // 핵심 수정:
-  // 화면상의 현재 위치는 자전거 몸통이나 그룹 기준점이 아니라 앞바퀴 중심으로 계산한다.
-  // 따라서 정지 순간에는 앞바퀴 중심이 빨간 정지선에 정확히 맞는다.
-  const frontWheelX = FRONT_REF_START_X + VISUAL_PATH_WIDTH * fraction;
+  // 실제 이동거리 s(m)를 고정 스케일로 환산한다.
+  // 전체 길이에 맞춰 비율로 압축하지 않으므로, 제동 시작선과 정지선이 실제 거리만큼 오른쪽으로 밀려난다.
+  const frontWheelX = FRONT_REF_START_X + s * METER_PX;
   const bikeX = frontWheelX - FRONT_WHEEL_LOCAL_X;
 
   // 위아래 흔들림 없이 수평 이동
   setAttr("bike", "transform", `translate(${bikeX.toFixed(2)} ${ROAD_Y})`);
+
+  // 경로가 화면보다 길면 스크롤을 자연스럽게 따라가게 한다.
+  if (scrollBox) {
+    const targetScroll = Math.max(0, frontWheelX - scrollBox.clientWidth * 0.55);
+    scrollBox.scrollLeft += (targetScroll - scrollBox.scrollLeft) * 0.10;
+  }
 
   // 제동 전에는 바퀴 회전, 제동 시작 후에는 바퀴 잠김 표현
   let wheelAngle = 0;
@@ -1546,7 +1631,7 @@ function animate(ts) {
   setAttr("frontWheel", "transform", `rotate(${wheelAngle.toFixed(2)} 62 28)`);
 
   const brakeStartS = DATA.approachDistance + DATA.reactionDistance;
-  const brakeStartFrontX = FRONT_REF_START_X + VISUAL_PATH_WIDTH * (brakeStartS / totalVisual);
+  const brakeStartFrontX = FRONT_REF_START_X + brakeStartS * METER_PX;
   const brakeStartBikeX = brakeStartFrontX - FRONT_WHEEL_LOCAL_X;
 
   if (braking && currentSpeed > 0.05) {
@@ -2137,9 +2222,9 @@ st.markdown(
     f"""
 <div class='info-box'>
 시뮬레이션은 <b>등속 운동 → 반응 거리 → 제동 거리</b> 순서로 진행됩니다.
+위험 발견선은 출발점으로부터 일정한 실제 거리 위치에 고정되어 있고, 조건이 바뀌면 제동 시작선과 정지선만 실제 거리만큼 오른쪽으로 이동합니다.
+경로가 화면보다 길어지면 가로 스크롤이 생기며, 1 m 눈금으로 절대적인 길이 감각을 확인할 수 있습니다.
 현재 배속은 <b>{playback_speed:.1f}배속</b>입니다.
-1.0배속에서는 물리 시간 1초가 실제 화면에서도 1초로 진행되고, 0.1배속에서는 10배 느리게 관찰됩니다.
-제동 구간에서는 바퀴가 잠긴 것처럼 회전이 멈추고, 연기와 미끄럼 자국이 나타납니다.
 </div>
 """,
     unsafe_allow_html=True,
