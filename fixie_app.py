@@ -1639,259 +1639,39 @@ def build_vpython_student_code(
     mu_value: float,
     road_name: str,
 ) -> str:
-    """학생이 Web VPython에 바로 붙여넣어 실행할 수 있는 코드."""
-    v0 = max(0.0, float(speed_ms))
-    return f"""Web VPython 3.2
+    """학생이 Web VPython에 바로 붙여넣어 실행할 수 있는 코드.
 
-# ==========================================
-# 1. 시뮬레이션 기본 변수
-#    아래 값은 Streamlit 앱의 비교군 1 설정값이 자동 반영된 것입니다.
-# ==========================================
-speed_kmh = {float(speed_kmh):.2f}      # 참고용: 앱에서 설정한 초기 속력 (km/h)
-v0 = {v0:.4f}             # 초기 속력 (m/s)
-t_reaction = {float(reaction_time):.4f} # 반응 시간 (초)
-g = 9.8                  # 중력가속도 (m/s^2)
-m = {float(mass_kg):.2f}                 # 자전거+탑승자 질량 (kg)
-mu = {float(mu_value):.4f}               # 마찰계수: {road_name}
+    비교군 1의 현재 설정값을 최종 VPython 코드의 주요 변수에 자동 반영한다.
+    """
+    template = 'Web VPython 3.2\n\n# ==========================================\n# 1. 시뮬레이션 기본 변수\n# ==========================================\nspeed_kmh = 30\nv0 = speed_kmh / 3.6\n\nt_reaction = 0.4\ng = 9.8\nm = 60\nmu = 0.70\n\n# ==========================================\n# 실험 상황의 고정 위치\n# ==========================================\n# 조건을 바꾸어도 아래 두 위치는 바뀌지 않습니다.\n# 비교 실험에서는 보행자 위치와 위험 발견 위치가 고정되어야 의미가 있습니다.\ndanger_x = 5.0       # 위험 발견 위치: 출발선 기준 5 m\npedestrian_x = 10.0   # 보행자 위치: 출발선 기준 10 m\n\n# 기존 코드와의 호환을 위해 run_up_distance는 danger_x와 같은 값으로 둡니다.\nrun_up_distance = danger_x\n\nplay_speed = 1.0\n\nframe_rate = 60\n\nrunning = False\n\n# 충돌 모션 상태 변수\ncollision_happened = False\npedestrian_v = vector(0, 0, 0)\npedestrian_omega = 0\n\n# ==========================================\n# 2. 실제 길이 스케일 설정\n# ==========================================\n# 이 코드에서는 VPython의 거리 1칸을 실제 1 m로 해석합니다.\n# 자전거 전체 길이: 약 2 m\n# 도로 중앙선 한 칸 길이: 1 m\n\nbike_length = 2.0\nwheel_radius = 0.34\nwheelbase = bike_length - 2 * wheel_radius\n\n# 자전거 기준점 current_x는 자전거 몸체 기준점입니다.\n# 앞바퀴의 가장 앞부분을 위치 판단 기준으로 쓰기 위해 offset을 따로 둡니다.\nrear_wheel_center_offset = -wheelbase / 2\nfront_wheel_center_offset = wheelbase / 2\nfront_edge_offset = front_wheel_center_offset + wheel_radius\n\n# 처음에 앞바퀴 앞부분이 출발선 x=0에 오도록 배치합니다.\ninitial_bike_x = -front_edge_offset\n\n# 보행자, 자전거, 도로 크기도 실제 m 단위에 가깝게 설정합니다.\nroad_width = 5.0\nlane_mark_length = 1.0\nlane_mark_gap = 1.0\nlane_mark_width = 0.12\n\n# ==========================================\n# 3. 정지거리 및 보행자 위치 계산\n# ==========================================\nreaction_distance = v0 * t_reaction\nbraking_distance = (v0**2) / (2 * mu * g)\ndanger_to_stop_distance = reaction_distance + braking_distance\n\n# 앞바퀴 앞부분 기준 정지 예상 위치\n# 위험 발견 위치는 danger_x로 고정되고, 조건에 따라 정지 예상 위치만 달라집니다.\nmax_distance = danger_x + danger_to_stop_distance\n\n# 보행자는 위에서 설정한 pedestrian_x에 고정됩니다.\n# 화면에는 위험 발견 지점으로부터 보행자가 몇 m 앞에 있는지 표시합니다.\npedestrian_distance_from_danger = round(pedestrian_x - danger_x, 1)\n\nroad_length = max(60, max_distance + 15, pedestrian_x + 15)\n\n# ==========================================\n# 4. 배경 및 노면 설정\n# ==========================================\nscene.width = 900\nscene.height = 420\nscene.background = color.black\n\n# 실제 스케일에 맞추면 물체가 작아지므로 카메라를 더 좁게 잡아 속도감을 살립니다.\nscene.range = 7\n\nroad = box(\n    pos=vector(road_length / 2, -0.04, 0),\n    size=vector(road_length, 0.08, road_width),\n    color=color.gray(0.58),\n    texture=textures.rough\n)\n\n# 도로 중앙선: 실제 길이 1 m\nlane_marks = []\nx = -5\nwhile x < road_length + 5:\n    mark = box(\n        pos=vector(x, 0.02, 0),\n        size=vector(lane_mark_length, 0.035, lane_mark_width),\n        color=color.white\n    )\n    lane_marks.append(mark)\n    x += lane_mark_length + lane_mark_gap\n\n# ==========================================\n# 도로 옆 거리 눈금\n# ==========================================\n# 1 m마다 작은 눈금을 표시하고, 5 m마다 숫자를 표시합니다.\n# 위치 기준은 자전거 앞바퀴의 가장 앞부분입니다.\nruler_z = -road_width / 2 - 0.45\nruler_y = 0.045\n\nruler_base = cylinder(\n    pos=vector(0, ruler_y, ruler_z),\n    axis=vector(road_length, 0, 0),\n    radius=0.01,\n    color=color.white\n)\n\nruler_ticks = []\nruler_labels = []\n\nmeter = 0\nwhile meter <= int(road_length):\n    if meter % 5 == 0:\n        tick_len = 0.55\n        tick_radius = 0.018\n        tick_color = color.yellow\n    else:\n        tick_len = 0.28\n        tick_radius = 0.010\n        tick_color = color.white\n\n    tick = cylinder(\n        pos=vector(meter, ruler_y, ruler_z - tick_len / 2),\n        axis=vector(0, 0, tick_len),\n        radius=tick_radius,\n        color=tick_color\n    )\n    ruler_ticks.append(tick)\n\n    # 숫자는 너무 복잡하지 않게 5 m마다만 표시합니다.\n    if meter % 5 == 0:\n        ruler_labels.append(\n            label(\n                pos=vector(meter, 0.22, ruler_z - 0.78),\n                text=str(meter) + " m",\n                height=8,\n                box=False,\n                color=color.yellow\n            )\n        )\n\n    meter += 1\n\n# 기준선\nstart_line = box(\n    pos=vector(0, 0.05, 0),\n    size=vector(0.08, 0.20, road_width),\n    color=color.white\n)\n\ndanger_line = box(\n    pos=vector(danger_x, 0.05, 0),\n    size=vector(0.08, 0.20, road_width),\n    color=color.green\n)\n\nbrake_line = box(\n    pos=vector(danger_x + reaction_distance, 0.05, 0),\n    size=vector(0.08, 0.20, road_width),\n    color=color.yellow\n)\n\nstop_line = box(\n    pos=vector(max_distance, 0.05, 0),\n    size=vector(0.08, 0.20, road_width),\n    color=color.red\n)\n\nlabel(pos=vector(0, 1.7, 0), text="출발", height=11, box=False, color=color.white)\nlabel(pos=vector(danger_x, 1.7, 0), text="위험 발견", height=11, box=False, color=color.green)\nlabel(pos=vector(danger_x + reaction_distance, 1.7, 0), text="제동 시작", height=11, box=False, color=color.yellow)\nlabel(pos=vector(max_distance, 1.7, 0), text="정지 예상", height=11, box=False, color=color.red)\n\n# ==========================================\n# 5. 도로 위 보행자 조형물\n# ==========================================\ndef make_pedestrian():\n    person_parts = []\n\n    # 사람 키 약 1.7 m\n    foot_y = 0.0\n    hip_y = 0.85\n    shoulder_y = 1.35\n    head_y = 1.62\n\n    leg_r = 0.045\n    arm_r = 0.035\n    body_r = 0.11\n\n    skin = vector(1.0, 0.82, 0.65)\n\n    # 아래 도형들은 x=0을 기준으로 만든 뒤 compound 전체를 pedestrian_x로 옮깁니다.\n    # 이렇게 해야 충돌 후 보행자를 통째로 움직이고 회전시키기 쉽습니다.\n\n    # 다리\n    person_parts.append(\n        cylinder(\n            pos=vector(-0.08, foot_y, 0),\n            axis=vector(0.04, hip_y - foot_y, 0),\n            radius=leg_r,\n            color=color.blue\n        )\n    )\n    person_parts.append(\n        cylinder(\n            pos=vector(0.08, foot_y, 0),\n            axis=vector(-0.04, hip_y - foot_y, 0),\n            radius=leg_r,\n            color=color.blue\n        )\n    )\n\n    # 몸통\n    person_parts.append(\n        cylinder(\n            pos=vector(0, hip_y, 0),\n            axis=vector(0, shoulder_y - hip_y, 0),\n            radius=body_r,\n            color=color.orange\n        )\n    )\n\n    # 머리\n    person_parts.append(\n        sphere(\n            pos=vector(0, head_y, 0),\n            radius=0.14,\n            color=skin\n        )\n    )\n\n    # 팔\n    person_parts.append(\n        cylinder(\n            pos=vector(-0.08, shoulder_y - 0.03, 0),\n            axis=vector(-0.18, -0.38, 0),\n            radius=arm_r,\n            color=skin\n        )\n    )\n    person_parts.append(\n        cylinder(\n            pos=vector(0.08, shoulder_y - 0.03, 0),\n            axis=vector(0.18, -0.38, 0),\n            radius=arm_r,\n            color=skin\n        )\n    )\n\n    # 발\n    person_parts.append(\n        box(\n            pos=vector(-0.09, 0.02, 0),\n            size=vector(0.22, 0.04, 0.12),\n            color=color.black\n        )\n    )\n    person_parts.append(\n        box(\n            pos=vector(0.09, 0.02, 0),\n            size=vector(0.22, 0.04, 0.12),\n            color=color.black\n        )\n    )\n\n    # origin을 발끝 위치 y=0에 둡니다.\n    # compound의 기본 origin은 물체 중심 쪽으로 잡힐 수 있어서,\n    # 그대로 pos.y=0을 주면 사람이 도로에 박혀 보일 수 있습니다.\n    return compound(person_parts, origin=vector(0, 0, 0))\n\npedestrian = make_pedestrian()\n\n# 도로의 윗면은 road.pos.y + road.size.y/2 = 0 입니다.\n# 따라서 발끝 기준 origin을 y=0에 두면 발끝이 도로 표면에 정확히 닿습니다.\nroad_surface_y = road.pos.y + road.size.y / 2\npedestrian.pos = vector(pedestrian_x, road_surface_y, 0)\n\npedestrian_label = label(\n    pos=vector(pedestrian_x, 2.05, 0),\n    text="보행자\\n위험 발견 +" + str(pedestrian_distance_from_danger) + " m",\n    height=11,\n    box=False,\n    color=color.orange\n)\n\n# 위험 발견 지점에서 보행자까지의 실제 거리 표시선\ndistance_line = cylinder(\n    pos=vector(danger_x, 0.08, -2.0),\n    axis=vector(pedestrian_distance_from_danger, 0, 0),\n    radius=0.018,\n    color=color.magenta\n)\n\ndistance_label = label(\n    pos=vector(danger_x + pedestrian_distance_from_danger / 2, 0.45, -2.0),\n    text="위험 발견 후 " + str(pedestrian_distance_from_danger) + " m",\n    height=10,\n    box=True,\n    color=color.magenta\n)\n\n# 충돌 표시용\ncollision_label = label(\n    pos=vector(pedestrian_x, 2.55, 0),\n    text="",\n    height=14,\n    box=False,\n    color=color.red\n)\n\n# ==========================================\n# 6. 자전거 조립\n# ==========================================\n\ndef make_wheel():\n    tire = ring(\n        axis=vector(0, 0, 1),\n        radius=wheel_radius,\n        thickness=0.035,\n        color=color.black\n    )\n\n    rim = ring(\n        axis=vector(0, 0, 1),\n        radius=wheel_radius * 0.78,\n        thickness=0.012,\n        color=color.white\n    )\n\n    spokes = []\n    for angle in [0, pi/4, pi/2, 3*pi/4]:\n        dx = wheel_radius * 0.76 * cos(angle)\n        dy = wheel_radius * 0.76 * sin(angle)\n        spokes.append(\n            cylinder(\n                pos=vector(-dx, -dy, 0),\n                axis=vector(2 * dx, 2 * dy, 0),\n                radius=0.004,\n                color=color.white\n            )\n        )\n\n    hub = sphere(\n        pos=vector(0, 0, 0),\n        radius=0.035,\n        color=color.gray(0.2)\n    )\n\n    return compound([tire, rim, hub] + spokes)\n\nwheel_rear = make_wheel()\nwheel_front = make_wheel()\n\n# 실제 스케일 기반 자전거 프레임 좌표\nn1 = vector(rear_wheel_center_offset, wheel_radius, 0)       # 뒷바퀴 중심\nn5 = vector(front_wheel_center_offset, wheel_radius, 0)      # 앞바퀴 중심\nn2 = vector(-0.10, wheel_radius + 0.05, 0)                   # 크랭크\nn3 = vector(-0.35, 0.95, 0)                                  # 안장 아래\nn4 = vector(0.48, 1.03, 0)                                   # 핸들 아래\n\nparts = []\nframe_r = 0.025\n\n# 자전거 프레임\nparts.append(cylinder(pos=n1, axis=n2-n1, radius=frame_r, color=color.red))\nparts.append(cylinder(pos=n2, axis=n3-n2, radius=frame_r, color=color.red))\nparts.append(cylinder(pos=n3, axis=n1-n3, radius=frame_r, color=color.red))\nparts.append(cylinder(pos=n3, axis=n4-n3, radius=frame_r, color=color.red))\nparts.append(cylinder(pos=n2, axis=n4-n2, radius=frame_r, color=color.red))\nparts.append(cylinder(pos=n4, axis=n5-n4, radius=frame_r, color=color.red))\n\n# 포크\nparts.append(cylinder(pos=n4, axis=n5-n4, radius=0.018, color=color.black))\n\n# 안장\nparts.append(\n    box(\n        pos=n3 + vector(-0.05, 0.08, 0),\n        size=vector(0.32, 0.055, 0.12),\n        color=color.black\n    )\n)\n\n# 핸들바\nparts.append(\n    cylinder(\n        pos=n4 + vector(0.05, 0.08, -0.20),\n        axis=vector(0, 0, 0.40),\n        radius=0.018,\n        color=color.black\n    )\n)\n\n# 크랭크\nparts.append(\n    ring(\n        pos=n2,\n        axis=vector(0, 0, 1),\n        radius=0.11,\n        thickness=0.012,\n        color=color.black\n    )\n)\n\n# ==========================================\n# 6-1. 자전거 위 라이더 조형물\n# ==========================================\nskin = vector(1.0, 0.82, 0.65)\nshirt = color.blue\npants = color.black\nshoe = color.white\n\n# 라이더 키가 실제 사람보다 약간 작게 보이도록 1.5~1.6 m 정도로 구성\nhip = n3 + vector(0.00, 0.10, 0)\nshoulder = hip + vector(0.22, 0.43, 0)\nhead_center = shoulder + vector(0.07, 0.24, 0)\n\nhand_target = n4 + vector(0.10, 0.08, 0)\n\npedal_target_front = n2 + vector(0.11, -0.08, 0)\npedal_target_back = n2 + vector(-0.11, -0.09, 0)\n\n# 머리\nparts.append(\n    sphere(\n        pos=head_center,\n        radius=0.11,\n        color=skin\n    )\n)\n\n# 몸통\nparts.append(\n    cylinder(\n        pos=hip,\n        axis=shoulder - hip,\n        radius=0.045,\n        color=shirt\n    )\n)\n\n# 팔\nelbow1 = shoulder + vector(0.16, -0.05, 0)\nparts.append(cylinder(pos=shoulder, axis=elbow1 - shoulder, radius=0.025, color=shirt))\nparts.append(cylinder(pos=elbow1, axis=hand_target - elbow1, radius=0.020, color=skin))\n\nshoulder2 = shoulder + vector(-0.03, -0.01, 0)\nelbow2 = shoulder2 + vector(0.14, -0.07, 0)\nhand_target2 = hand_target + vector(-0.03, -0.02, 0)\n\nparts.append(cylinder(pos=shoulder2, axis=elbow2 - shoulder2, radius=0.025, color=shirt))\nparts.append(cylinder(pos=elbow2, axis=hand_target2 - elbow2, radius=0.020, color=skin))\n\n# 다리\nknee1 = hip + vector(0.10, -0.35, 0)\nparts.append(cylinder(pos=hip, axis=knee1 - hip, radius=0.030, color=pants))\nparts.append(cylinder(pos=knee1, axis=pedal_target_front - knee1, radius=0.026, color=pants))\nparts.append(sphere(pos=pedal_target_front, radius=0.030, color=shoe))\n\nhip2 = hip + vector(-0.03, -0.01, 0)\nknee2 = hip2 + vector(-0.05, -0.30, 0)\n\nparts.append(cylinder(pos=hip2, axis=knee2 - hip2, radius=0.030, color=pants))\nparts.append(cylinder(pos=knee2, axis=pedal_target_back - knee2, radius=0.026, color=pants))\nparts.append(sphere(pos=pedal_target_back, radius=0.030, color=shoe))\n\nbike_frame = compound(parts)\n\n# 속도감용 잔상: 실제 스케일에 맞춰 얇고 짧게 표시\nmotion_streaks = []\nfor i in range(7):\n    streak = cylinder(\n        pos=vector(-1.0 - i * 0.35, 0.9 + i * 0.04, 0),\n        axis=vector(-0.55, 0, 0),\n        radius=0.012,\n        color=color.white,\n        opacity=0.28\n    )\n    motion_streaks.append(streak)\n\ndef update_bike_pos(x):\n    bike_frame.pos.x = x\n    wheel_rear.pos = n1 + vector(x, 0, 0)\n    wheel_front.pos = n5 + vector(x, 0, 0)\n\n    for i, streak in enumerate(motion_streaks):\n        streak.pos = vector(x - 0.7 - i * 0.30, 0.95 + i * 0.04, 0)\n        streak.axis = vector(-0.45 - i * 0.07, 0, 0)\n\nupdate_bike_pos(initial_bike_x)\n\nscene.center = vector(4, 1.1, 0)\n\n# ==========================================\n# 7. UI\n# ==========================================\ndef toggle_run(b):\n    global running\n    running = True\n\nscene.append_to_caption("\\n")\nbutton(text="▶ 시뮬레이션 시작 / 다시하기", bind=toggle_run, background=color.orange)\nscene.append_to_caption("\\n\\n")\n\nscene.append_to_caption("초기 속력: " + str(speed_kmh) + " km/h = " + str(round(v0, 2)) + " m/s\\n")\nscene.append_to_caption("반응 시간: " + str(t_reaction) + " s\\n")\nscene.append_to_caption("마찰계수 μ: " + str(mu) + "\\n")\nscene.append_to_caption("화면 재생 속도 배율: " + str(play_speed) + "배\\n")\nscene.append_to_caption("시간 스케일: play_speed = 1.0일 때 실제 시간과 거의 1:1\\n")\nscene.append_to_caption("기준점: 자전거 앞바퀴의 가장 앞부분\\n")\nscene.append_to_caption("자전거 길이: " + str(bike_length) + " m\\n")\nscene.append_to_caption("도로 중앙선 한 칸 길이: " + str(lane_mark_length) + " m\\n")\nscene.append_to_caption("도로 옆 거리 눈금: 1 m 간격, 5 m마다 숫자 표시\\n")\nscene.append_to_caption("위험 발견 고정 위치: 출발선 기준 " + str(danger_x) + " m\\n")\nscene.append_to_caption("보행자 고정 위치: 출발선 기준 " + str(pedestrian_x) + " m\\n")\nscene.append_to_caption("위험 발견 후 보행자까지 거리: " + str(pedestrian_distance_from_danger) + " m\\n")\nscene.append_to_caption("위험 발견 후 예상 정지거리: " + str(round(danger_to_stop_distance, 1)) + " m\\n")\nscene.append_to_caption("충돌 시: 보행자가 만화처럼 앞으로 튕겨 나갑니다.\\n\\n")\n\n# ==========================================\n# 8. 그래프 설정\n# ==========================================\nposition_ymax = max_distance * 1.15\ninitial_KE = 0.5 * m * (v0**2)\nenergy_ymax = initial_KE * 1.25\n\ng1 = graph(\n    title="<b>Position-Time Graph</b> (앞바퀴 앞부분 기준)",\n    xtitle="Time (s)",\n    ytitle="Position (m)",\n    width=800,\n    height=420,\n    ymin=0,\n    ymax=position_ymax\n)\n\ng2 = graph(\n    title="<b>Energy Conservation</b>",\n    xtitle="Time (s)",\n    ytitle="Energy (J)",\n    width=800,\n    height=300,\n    ymin=0,\n    ymax=energy_ymax\n)\n\npos_curve = gcurve(graph=g1, color=color.black, width=2)\nke_curve = gcurve(graph=g2, color=color.orange, label="Kinetic Energy")\nwork_curve = gcurve(graph=g2, color=color.red, label="Friction Work")\ntotal_e_curve = gcurve(graph=g2, color=color.green, label="Total Energy")\n\n# ==========================================\n# 9. 메인 애니메이션 루프\n# ==========================================\nwhile True:\n    rate(frame_rate)\n\n    if running:\n        current_v = v0\n        current_x = initial_bike_x\n        t = 0\n        dt = (1 / frame_rate) * play_speed\n        work_friction = 0\n\n        # 보행자와 충돌 상태 초기화\n        collision_happened = False\n        pedestrian_v = vector(0, 0, 0)\n        pedestrian_omega = 0\n        pedestrian.pos = vector(pedestrian_x, road_surface_y, 0)\n        pedestrian.up = vector(0, 1, 0)\n        pedestrian.axis = vector(1, 0, 0)\n        pedestrian_label.visible = True\n        pedestrian_label.pos = vector(pedestrian_x, 2.05, 0)\n        collision_label.text = ""\n\n        update_bike_pos(current_x)\n\n        # 앞바퀴 앞부분 기준 이벤트 시각\n        # 위험 발견 위치는 항상 danger_x로 고정됩니다.\n        t_danger = danger_x / v0\n        t_brake = t_danger + t_reaction\n\n        # 제동 시작선은 위험 발견 후 반응거리만큼 앞에 생깁니다.\n        # 따라서 조건을 바꾸면 이 선은 달라질 수 있습니다.\n        brake_line.pos.x = danger_x + reaction_distance\n\n        pos_curve.delete()\n        ke_curve.delete()\n        work_curve.delete()\n        total_e_curve.delete()\n\n        pos_curve = gcurve(graph=g1, color=color.black, width=2)\n        ke_curve = gcurve(graph=g2, color=color.orange, label="Kinetic Energy")\n        work_curve = gcurve(graph=g2, color=color.red, label="Friction Work")\n        total_e_curve = gcurve(graph=g2, color=color.green, label="Total Energy")\n\n        while current_v > 0 and running:\n            rate(frame_rate)\n\n            front_edge_x = current_x + front_edge_offset\n\n            # 충돌 판정:\n            # 앞바퀴의 가장 앞부분이 보행자 중심 근처에 닿으면 보행자를 앞으로 튕깁니다.\n            # 시각적 효과를 위한 간단한 만화식 모션이며, 실제 인체 운동을 정확히 나타내는 것은 아닙니다.\n            if (not collision_happened) and front_edge_x >= pedestrian_x - 0.18:\n                collision_happened = True\n                pedestrian_label.visible = False\n                collision_label.text = "충돌!"\n                collision_label.pos = vector(pedestrian_x, 2.55, 0)\n\n                # 충돌 순간 자전거 속도 일부를 보행자의 초기 속도로 넘겨주는 느낌\n                pedestrian_v = vector(max(2.0, current_v * 0.75), 3.2, 0)\n                pedestrian_omega = -10.0\n\n            # 충돌 후 보행자 포물선 운동 + 회전\n            if collision_happened:\n                pedestrian_v.y = pedestrian_v.y - g * dt\n                pedestrian.pos = pedestrian.pos + pedestrian_v * dt\n\n                # 보행자 몸 전체를 z축 기준으로 회전시켜 날아가는 느낌을 줍니다.\n                pedestrian.rotate(\n                    angle=pedestrian_omega * dt,\n                    axis=vector(0, 0, 1),\n                    origin=pedestrian.pos\n                )\n\n                collision_label.pos = pedestrian.pos + vector(0, 2.2, 0)\n\n                # 바닥 아래로 너무 깊게 내려가지 않도록 간단히 멈춤\n                if pedestrian.pos.y < road_surface_y:\n                    pedestrian.pos.y = road_surface_y\n                    pedestrian_v = vector(pedestrian_v.x * 0.35, 0, 0)\n                    pedestrian_omega = pedestrian_omega * 0.65\n\n            # 카메라가 앞바퀴 앞부분을 기준으로 따라가되, 약간 앞쪽을 보여줍니다.\n            target_center_x = front_edge_x + 1.4\n            scene.center = vector(target_center_x, 1.25, 0)\n\n            if t < t_danger:\n                a = 0\n                pos_curve.color = color.black\n\n            elif t < t_brake:\n                a = 0\n                pos_curve.color = color.blue\n\n            else:\n                a = -mu * g\n                pos_curve.color = color.red\n\n                distance_moved = current_v * dt\n                work_friction += (mu * m * g) * distance_moved\n\n            current_v += a * dt\n            if current_v < 0:\n                current_v = 0\n\n            current_x += current_v * dt\n            update_bike_pos(current_x)\n\n            current_radius = wheel_radius\n            d_theta = (current_v / current_radius) * dt\n            wheel_front.rotate(angle=-d_theta, axis=vector(0, 0, 1))\n            wheel_rear.rotate(angle=-d_theta, axis=vector(0, 0, 1))\n\n            KE = 0.5 * m * (current_v**2)\n            pos_curve.plot(t, front_edge_x)\n            ke_curve.plot(t, KE)\n            work_curve.plot(t, work_friction)\n            total_e_curve.plot(t, KE + work_friction)\n\n            t += dt\n\n        running = False\n'
 
-# Web VPython 화면에서 출발선~위험선을 보기 좋게 벌려 놓기 위한 거리입니다.
-# 정지거리의 핵심 계산에는 v0, t_reaction, mu가 반영됩니다.
-run_up_distance = 80.0
-running = False
-
-# ==========================================
-# 2. 배경 및 노면(바닥) 설정
-# ==========================================
-scene.width = 800
-scene.height = 400
-scene.background = color.cyan
-
-road = box(
-    pos=vector(200, -0.1, 0),
-    size=vector(500, 0.2, 40),
-    color=color.gray(0.6),
-    texture=textures.rough
-)
-
-start_line = box(
-    pos=vector(0, 0, 0),
-    size=vector(0.5, 1.0, 30),
-    color=color.white
-)
-
-danger_line = box(
-    pos=vector(run_up_distance, 0, 0),
-    size=vector(0.5, 1.0, 30),
-    color=color.green
-)
-
-brake_line = box(
-    pos=vector(run_up_distance + v0 * t_reaction, 0, 0),
-    size=vector(0.5, 1.0, 30),
-    color=color.yellow
-)
-
-# ==========================================
-# 3. 자전거 조립
-# ==========================================
-bike_scale = 15.0
-
-def make_wheel():
-    w = ring(
-        axis=vector(0, 0, 1),
-        radius=0.4 * bike_scale,
-        thickness=0.04 * bike_scale,
-        color=color.black
+    # Streamlit 비교군 1 설정값을 VPython 코드 변수에 반영
+    code = template
+    code = code.replace(
+        "speed_kmh = 30",
+        f"speed_kmh = {float(speed_kmh):.2f}   # Streamlit 비교군 1 초기 속력 (km/h)",
+        1,
     )
-    spoke1 = cylinder(
-        axis=vector(0.8 * bike_scale, 0, 0),
-        pos=vector(-0.4 * bike_scale, 0, 0),
-        radius=0.015 * bike_scale,
-        color=color.white
+    code = code.replace(
+        "t_reaction = 0.4",
+        f"t_reaction = {float(reaction_time):.4f}   # Streamlit 비교군 1 반응 시간 (초)",
+        1,
     )
-    spoke2 = cylinder(
-        axis=vector(0, 0.8 * bike_scale, 0),
-        pos=vector(0, -0.4 * bike_scale, 0),
-        radius=0.015 * bike_scale,
-        color=color.white
+    code = code.replace(
+        "m = 60",
+        f"m = {float(mass_kg):.2f}   # Streamlit 비교군 1 질량 (kg)",
+        1,
     )
-    return compound([w, spoke1, spoke2])
-
-wheel_rear = make_wheel()
-wheel_front = make_wheel()
-
-n1 = vector(-0.6 * bike_scale, 0.4 * bike_scale, 0)
-n2 = vector(0, 0.4 * bike_scale, 0)
-n3 = vector(-0.2 * bike_scale, 1.0 * bike_scale, 0)
-n4 = vector(0.4 * bike_scale, 1.1 * bike_scale, 0)
-n5 = vector(0.6 * bike_scale, 0.4 * bike_scale, 0)
-
-parts = []
-frame_r = 0.03 * bike_scale
-
-parts.append(cylinder(pos=n1, axis=n2-n1, radius=frame_r, color=color.red))
-parts.append(cylinder(pos=n2, axis=n3-n2, radius=frame_r, color=color.red))
-parts.append(cylinder(pos=n3, axis=n1-n3, radius=frame_r, color=color.red))
-parts.append(cylinder(pos=n3, axis=n4-n3, radius=frame_r, color=color.red))
-parts.append(cylinder(pos=n2, axis=n4-n2, radius=frame_r, color=color.red))
-parts.append(cylinder(pos=n4, axis=n5-n4, radius=frame_r, color=color.red))
-
-# 안장
-parts.append(
-    box(
-        pos=n3 + vector(0, 0.05 * bike_scale, 0),
-        size=vector(0.3 * bike_scale, 0.1 * bike_scale, 0.15 * bike_scale),
-        color=color.black
+    code = code.replace(
+        "mu = 0.70",
+        f"mu = {float(mu_value):.4f}   # Streamlit 비교군 1 노면 마찰계수: {road_name}",
+        1,
     )
-)
 
-# 핸들바
-parts.append(
-    cylinder(
-        pos=n4 + vector(0, 0, -0.3 * bike_scale),
-        axis=vector(0, 0, 0.6 * bike_scale),
-        radius=frame_r,
-        color=color.black
-    )
-)
+    # v0는 speed_kmh에서 자동 계산되도록 유지한다.
+    # 즉, 학생이 speed_kmh만 바꾸어도 v0가 함께 바뀐다.
+    return code
 
-# 전조등 느낌의 표시
-parts.append(
-    sphere(
-        pos=n4 + vector(0.1 * bike_scale, 0, 0),
-        radius=0.08 * bike_scale,
-        color=color.yellow,
-        emissive=True
-    )
-)
-
-bike_frame = compound(parts)
-
-def update_bike_pos(x):
-    bike_frame.pos.x = x
-    wheel_rear.pos = n1 + vector(x, 0, 0)
-    wheel_front.pos = n5 + vector(x, 0, 0)
-
-update_bike_pos(0)
-
-max_distance = run_up_distance + (v0 * t_reaction) + (v0**2) / (2 * mu * g) if mu > 0 else run_up_distance
-scene.center = vector(max_distance / 2, 0.5 * bike_scale, 0)
-
-# ==========================================
-# 4. UI
-# ==========================================
-def toggle_run(b):
-    global running
-    running = True
-
-scene.append_to_caption('\\n')
-button(text='▶ 시뮬레이션 시작 / 다시하기', bind=toggle_run, background=color.orange)
-scene.append_to_caption('\\n\\n')
-
-# ==========================================
-# 5. 그래프 설정
-# ==========================================
-position_ymax = max_distance * 1.4
-initial_KE = 0.5 * m * (v0**2)
-energy_ymax = max(1, initial_KE * 1.4)
-
-g1 = graph(
-    title="<b>Position-Time Graph</b> (검은선:주행 / 파란선:반응 / 빨간선:제동)",
-    xtitle="Time (s)",
-    ytitle="Position (m)",
-    width=800,
-    height=600,
-    ymin=0,
-    ymax=position_ymax
-)
-
-g2 = graph(
-    title="<b>Energy Conservation</b>",
-    xtitle="Time (s)",
-    ytitle="Energy (J)",
-    width=800,
-    height=300,
-    ymin=0,
-    ymax=energy_ymax
-)
-
-pos_curve = gcurve(graph=g1, color=color.black, width=2)
-ke_curve = gcurve(graph=g2, color=color.orange, label="Kinetic Energy")
-work_curve = gcurve(graph=g2, color=color.red, label="Friction Work")
-total_e_curve = gcurve(graph=g2, color=color.green, label="Total Energy")
-
-# ==========================================
-# 6. 메인 애니메이션 루프
-# ==========================================
-while True:
-    rate(60)
-
-    if running:
-        current_v = v0
-        current_x = 0
-        t = 0
-        dt = 0.01
-        work_friction = 0
-        update_bike_pos(current_x)
-
-        t_danger = run_up_distance / v0 if v0 > 0 else 0
-        t_brake = t_danger + t_reaction
-
-        brake_line.pos.x = run_up_distance + v0 * t_reaction
-
-        pos_curve.delete()
-        ke_curve.delete()
-        work_curve.delete()
-        total_e_curve.delete()
-
-        pos_curve = gcurve(graph=g1, color=color.black, width=2)
-        ke_curve = gcurve(graph=g2, color=color.orange, label="Kinetic Energy")
-        work_curve = gcurve(graph=g2, color=color.red, label="Friction Work")
-        total_e_curve = gcurve(graph=g2, color=color.green, label="Total Energy")
-
-        while current_v > 0 and running:
-            rate(400)
-
-            # [0구간] 출발선 ~ 초록색 위험선: 등속 운동
-            if t < t_danger:
-                a = 0
-                pos_curve.color = color.black
-
-            # [1구간] 위험 감지 ~ 노란색 브레이크선: 반응 시간 동안 등속 운동
-            elif t < t_brake:
-                a = 0
-                pos_curve.color = color.blue
-
-            # [2구간] 브레이크 이후: 마찰력에 의한 감속 운동
-            else:
-                a = -mu * g
-                pos_curve.color = color.red
-
-                distance_moved = current_v * dt
-                work_friction += (mu * m * g) * distance_moved
-
-            current_v += a * dt
-            if current_v < 0:
-                current_v = 0
-
-            current_x += current_v * dt
-            update_bike_pos(current_x)
-
-            current_radius = 0.4 * bike_scale
-            d_theta = (current_v / current_radius) * dt if current_radius > 0 else 0
-            wheel_front.rotate(angle=-d_theta, axis=vector(0, 0, 1))
-            wheel_rear.rotate(angle=-d_theta, axis=vector(0, 0, 1))
-
-            KE = 0.5 * m * (current_v**2)
-            pos_curve.plot(t, current_x)
-            ke_curve.plot(t, KE)
-            work_curve.plot(t, work_friction)
-            total_e_curve.plot(t, KE + work_friction)
-
-            t += dt
-
-        running = False
-"""
 
 
 def build_copyable_code_html(code_text: str) -> str:
@@ -2474,6 +2254,7 @@ st.markdown(
     """
 <div class='info-box'>
 아래 코드는 <b>비교군 1</b>의 현재 설정값을 자동으로 넣어 만든 Web VPython 코드입니다.
+초기 속력, 반응 시간, 질량, 노면 마찰계수가 자동 반영됩니다.
 코드 복사 버튼을 누른 뒤 Web VPython 편집기에 붙여넣으면 학생들이 같은 조건의 시뮬레이션을 직접 실행해볼 수 있습니다.
 </div>
 """,
