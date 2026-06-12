@@ -284,7 +284,7 @@ def build_interactive_graph_html(graph_data: dict) -> str:
 <div class="wrap">
   <div class="top">
     <div>
-      <div class="title">📈 이차함수 그래프: 드래그로 이동, 휠로 확대·축소</div>
+      <div class="title">📈 이차함수 그래프: 속도에 따른 제동 거리</div>
       <div class="sub">실제 속도 영역 x ≥ 0은 실선, 수학적 확장 영역 x &lt; 0은 점선입니다. 여러 조건의 그래프를 중첩해 비교할 수 있습니다.</div>
     </div>
     <div class="buttons">
