@@ -369,6 +369,15 @@ function resizeCanvas() {
   draw();
 }
 
+function formatAxisNumber(value, step) {
+  if (!isFinite(value)) return "";
+  const absStep = Math.abs(step);
+  if (absStep >= 10) return String(Math.round(value));
+  if (absStep >= 1) return value.toFixed(Math.abs(value) < 1e-9 ? 0 : 1).replace(/\.0$/, "");
+  if (absStep >= 0.1) return value.toFixed(1);
+  return value.toFixed(2);
+}
+
 function drawGrid() {
   const r = rect();
   const w = r.width, h = r.height;
@@ -379,6 +388,10 @@ function drawGrid() {
   const xStep = niceStep((view.xMax - view.xMin) / 9);
   const yStep = niceStep((view.yMax - view.yMin) / 8);
 
+  const xTicks = [];
+  const yTicks = [];
+
+  // 1) 그래프 내부 격자선은 클리핑해서 그린다.
   ctx.save();
   ctx.beginPath();
   ctx.rect(margins.left, margins.top, plotWidth(), plotHeight());
@@ -386,36 +399,30 @@ function drawGrid() {
 
   ctx.strokeStyle = "#e7edf6";
   ctx.lineWidth = 1;
-  ctx.fillStyle = "#64748b";
-  ctx.font = "12px Pretendard, Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
 
   let x = Math.floor(view.xMin / xStep) * xStep;
   while (x <= view.xMax + 1e-9) {
     const px = sx(x);
+    xTicks.push({value: x, px});
     ctx.beginPath();
     ctx.moveTo(px, margins.top);
     ctx.lineTo(px, margins.top + plotHeight());
     ctx.stroke();
-    ctx.fillText(String(Math.round(x)), px, margins.top + plotHeight() + 10);
     x += xStep;
   }
 
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
   let y = Math.floor(view.yMin / yStep) * yStep;
   while (y <= view.yMax + 1e-9) {
     const py = sy(y);
+    yTicks.push({value: y, py});
     ctx.beginPath();
     ctx.moveTo(margins.left, py);
     ctx.lineTo(margins.left + plotWidth(), py);
     ctx.stroke();
-    ctx.fillText(String(Math.round(y)), margins.left - 10, py);
     y += yStep;
   }
 
-  // axes
+  // 축선
   ctx.strokeStyle = "#1f2937";
   ctx.lineWidth = 2;
   if (view.xMin <= 0 && view.xMax >= 0) {
@@ -432,12 +439,28 @@ function drawGrid() {
     ctx.lineTo(margins.left + plotWidth(), py);
     ctx.stroke();
   }
-
   ctx.restore();
 
-  // labels
+  // 2) x축·y축 수치 라벨은 클리핑 밖에서 그린다.
+  ctx.fillStyle = "#475569";
+  ctx.font = "800 12px Pretendard, Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (const tick of xTicks) {
+    if (tick.px < margins.left - 1 || tick.px > margins.left + plotWidth() + 1) continue;
+    ctx.fillText(formatAxisNumber(tick.value, xStep), tick.px, margins.top + plotHeight() + 10);
+  }
+
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (const tick of yTicks) {
+    if (tick.py < margins.top - 1 || tick.py > margins.top + plotHeight() + 1) continue;
+    ctx.fillText(formatAxisNumber(tick.value, yStep), margins.left - 10, tick.py);
+  }
+
+  // 축 제목
   ctx.fillStyle = "#0f172a";
-  ctx.font = "800 15px Pretendard, Arial";
+  ctx.font = "850 15px Pretendard, Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   ctx.fillText("초기 속도 x (km/h)", margins.left + plotWidth()/2, h - 10);
@@ -760,6 +783,32 @@ def build_simulation_html(data: dict) -> str:
   .head { fill: #111827; }
   .smoke { fill: #d1d5db; opacity: 0; }
   .skid { stroke: #111827; stroke-width: 5; stroke-linecap: round; opacity: 0; }
+  .time-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .time-chart-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 10px 10px 8px;
+  }
+  .time-chart-title {
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 950;
+    margin: 0 0 6px 2px;
+  }
+  .time-canvas {
+    width: 100%;
+    height: 250px;
+    display: block;
+  }
+  @media (max-width: 900px) {
+    .time-charts { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -852,6 +901,17 @@ def build_simulation_html(data: dict) -> str:
       <span class="chip"><span class="swatch" style="background:var(--reaction)"></span>반응 거리: 위험을 봤지만 아직 제동 전</span>
       <span class="chip"><span class="swatch" style="background:var(--brake)"></span>제동 거리: 마찰력이 일을 하며 운동에너지 감소</span>
     </div>
+
+    <div class="time-charts">
+      <div class="time-chart-card">
+        <div class="time-chart-title">속도-시간 그래프</div>
+        <canvas id="speedChart" class="time-canvas"></canvas>
+      </div>
+      <div class="time-chart-card">
+        <div class="time-chart-title">이동거리-시간 그래프</div>
+        <canvas id="distanceChart" class="time-canvas"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -876,6 +936,209 @@ function setText(id, val) {
 function fmt(x) {
   if (x >= 100) return `${x.toFixed(0)} m`;
   return `${x.toFixed(1)} m`;
+}
+
+
+const speedCanvas = document.getElementById("speedChart");
+const distanceCanvas = document.getElementById("distanceChart");
+
+function resizeChartCanvas(canvas) {
+  if (!canvas) return null;
+  const r = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(r.width * dpr));
+  canvas.height = Math.max(1, Math.round(r.height * dpr));
+  const c = canvas.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return {ctx: c, w: r.width, h: r.height};
+}
+
+function speedAtTime(t) {
+  const v = DATA.speedMs;
+  const a = DATA.aEff;
+  if (DATA.speedKmh <= 0) return 0;
+  if (t < DATA.approachTime + DATA.reactionTime) return v;
+  const tb = t - DATA.approachTime - DATA.reactionTime;
+  return Math.max(0, v - a * tb);
+}
+
+function distanceAtTime(t) {
+  const v = DATA.speedMs;
+  const a = DATA.aEff;
+  if (DATA.speedKmh <= 0) return 0;
+  if (t < DATA.approachTime) return v * t;
+  if (t < DATA.approachTime + DATA.reactionTime) {
+    return DATA.approachDistance + v * (t - DATA.approachTime);
+  }
+  const tb = t - DATA.approachTime - DATA.reactionTime;
+  const s = DATA.approachDistance + DATA.reactionDistance + v * tb - 0.5 * a * tb * tb;
+  return Math.max(0, Math.min(DATA.approachDistance + DATA.totalStoppingDistance, s));
+}
+
+function niceChartStep(raw) {
+  if (!isFinite(raw) || raw <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  if (norm < 1.5) return 1 * mag;
+  if (norm < 3.5) return 2 * mag;
+  if (norm < 7.5) return 5 * mag;
+  return 10 * mag;
+}
+
+function chartTickLabel(v, step) {
+  if (Math.abs(step) >= 10) return String(Math.round(v));
+  if (Math.abs(step) >= 1) return v.toFixed(1).replace(/\.0$/, "");
+  return v.toFixed(2);
+}
+
+function drawTimeChart(canvas, kind, currentT) {
+  const info = resizeChartCanvas(canvas);
+  if (!info) return;
+  const ctx = info.ctx, w = info.w, h = info.h;
+  const m = {left: 54, right: 18, top: 20, bottom: 38};
+  const pw = w - m.left - m.right;
+  const ph = h - m.top - m.bottom;
+  const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
+  const yMaxRaw = kind === "speed"
+    ? Math.max(5, DATA.speedMs * 3.6 * 1.15)
+    : Math.max(5, (DATA.approachDistance + DATA.totalStoppingDistance) * 1.12);
+  const yStep = niceChartStep(yMaxRaw / 5);
+  const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
+  const xStep = niceChartStep(totalT / 6);
+
+  const sxT = t => m.left + (t / totalT) * pw;
+  const syV = y => m.top + ph - (y / yMax) * ph;
+  const valueAt = t => kind === "speed" ? speedAtTime(t) * 3.6 : distanceAtTime(t);
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+
+  // grid and y labels
+  ctx.strokeStyle = "#e7edf6";
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#64748b";
+  ctx.font = "800 11px Pretendard, Arial";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let y=0; y<=yMax+1e-9; y+=yStep) {
+    const py = syV(y);
+    ctx.beginPath();
+    ctx.moveTo(m.left, py);
+    ctx.lineTo(m.left + pw, py);
+    ctx.stroke();
+    ctx.fillText(chartTickLabel(y, yStep), m.left - 8, py);
+  }
+
+  // x labels
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (let t=0; t<=totalT+1e-9; t+=xStep) {
+    const px = sxT(t);
+    ctx.beginPath();
+    ctx.moveTo(px, m.top);
+    ctx.lineTo(px, m.top + ph);
+    ctx.stroke();
+    ctx.fillText(chartTickLabel(t, xStep), px, m.top + ph + 8);
+  }
+
+  // axes
+  ctx.strokeStyle = "#1f2937";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(m.left, m.top);
+  ctx.lineTo(m.left, m.top + ph);
+  ctx.lineTo(m.left + pw, m.top + ph);
+  ctx.stroke();
+
+  // event markers
+  const events = [
+    {t: DATA.approachTime, label: "위험 발견", color: "#38bdf8"},
+    {t: DATA.approachTime + DATA.reactionTime, label: "제동 시작", color: "#f59e0b"},
+    {t: totalT, label: "정지", color: "#ef4444"},
+  ];
+  ctx.font = "850 10px Pretendard, Arial";
+  for (const ev of events) {
+    const px = sxT(ev.t);
+    ctx.strokeStyle = ev.color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(px, m.top);
+    ctx.lineTo(px, m.top + ph);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.save();
+    ctx.translate(px + 4, m.top + 10);
+    ctx.rotate(-Math.PI/2);
+    ctx.fillStyle = ev.color;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(ev.label, 0, 0);
+    ctx.restore();
+  }
+
+  // curve
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(m.left, m.top, pw, ph);
+  ctx.clip();
+  ctx.beginPath();
+  const n = 240;
+  for (let i=0; i<=n; i++) {
+    const t = totalT * i / n;
+    const x = sxT(t);
+    const y = syV(valueAt(t));
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = kind === "speed" ? "#2563eb" : "#059669";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  ctx.restore();
+
+  // current marker
+  const tNow = Math.max(0, Math.min(totalT, currentT));
+  const xNow = sxT(tNow);
+  const yNow = syV(valueAt(tNow));
+  ctx.strokeStyle = "#111827";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5,5]);
+  ctx.beginPath();
+  ctx.moveTo(xNow, m.top);
+  ctx.lineTo(xNow, m.top + ph);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#111827";
+  ctx.beginPath();
+  ctx.arc(xNow, yNow, 5, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "900 11px Pretendard, Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  const unit = kind === "speed" ? "km/h" : "m";
+  ctx.fillText(`${valueAt(tNow).toFixed(1)} ${unit}`, Math.min(xNow + 8, m.left + pw - 70), Math.max(yNow - 7, m.top + 12));
+
+  // axis labels
+  ctx.fillStyle = "#334155";
+  ctx.font = "850 11px Pretendard, Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("시간 t (s)", m.left + pw/2, h - 2);
+  ctx.save();
+  ctx.translate(12, m.top + ph/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText(kind === "speed" ? "속도 (km/h)" : "이동거리 (m)", 0, 0);
+  ctx.restore();
+}
+
+function drawTimeCharts(currentT) {
+  drawTimeChart(speedCanvas, "speed", currentT);
+  drawTimeChart(distanceCanvas, "distance", currentT);
 }
 
 function setupMarks() {
@@ -911,6 +1174,7 @@ function restart() {
   if (raf) cancelAnimationFrame(raf);
   startReal = null;
   setupMarks();
+  drawTimeCharts(0);
   raf = requestAnimationFrame(animate);
 }
 
@@ -1009,6 +1273,7 @@ function animate(ts) {
   setText("phaseText", phase);
   setText("distanceText", `현재 이동 거리: ${fmt(s)} / 현재 속력: ${(currentSpeed*3.6).toFixed(1)} km/h`);
   setText("clockText", `물리 시간 ${cappedT.toFixed(2)}초 / 실제 재생 시간 ${realElapsed.toFixed(2)}초 / ${DATA.playbackSpeed.toFixed(1)}배속`);
+  drawTimeCharts(cappedT);
 
   if (t < totalPhysical) {
     raf = requestAnimationFrame(animate);
@@ -1016,11 +1281,13 @@ function animate(ts) {
     setText("phaseText", "정지 완료");
     setText("distanceText", `위험 발견 후 총 정지거리: ${fmt(DATA.totalStoppingDistance)}`);
     setText("clockText", `총 물리 시간 ${totalPhysical.toFixed(2)}초 / 실제 재생 시간 ${(totalPhysical / DATA.playbackSpeed).toFixed(2)}초`);
+    drawTimeCharts(totalPhysical);
     setAttr("skidLine", "opacity", 0.35);
     for (const id of ["smoke1","smoke2","smoke3","smoke4"]) setAttr(id, "opacity", 0);
   }
 }
 
+window.addEventListener("resize", () => drawTimeCharts(0));
 setupMarks();
 restart();
 </script>
@@ -1031,7 +1298,7 @@ restart();
 
 
 def show_simulation(data: dict):
-    components.html(build_simulation_html(data), height=650, scrolling=False)
+    components.html(build_simulation_html(data), height=960, scrolling=False)
 
 
 # ------------------------------------------------------------
