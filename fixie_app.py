@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 G = 9.8
-APPROACH_DISTANCE = 8.0  # 위험 발견 전 짧은 등속 주행 구간. 정지거리 함수 S(x)에는 포함하지 않음.
+APPROACH_DISTANCE = 8.0  # 위험 발견 전 짧은 등속 주행 구간. 정지거리 함수 S(v)에는 포함하지 않음.
 
 ROAD_OPTIONS = {
     "마른 아스팔트": {"mu": 0.70, "desc": "비교적 잘 멈추는 노면"},
@@ -52,7 +52,7 @@ def fmt_time(x: float) -> str:
 
 
 def calc_coefficients(reaction_time: float, mu: float) -> dict:
-    """S(x)=Ax^2+Bx+0. x 단위는 km/h, S 단위는 m."""
+    """S(v)=Av^2+Bv+0. v 단위는 km/h, S 단위는 m."""
     a_eff = mu * G
     A = 1 / (25.92 * a_eff) if a_eff > 0 else math.inf
     B = reaction_time / 3.6
@@ -550,7 +550,7 @@ function drawGrid() {
   ctx.save();
   ctx.translate(19, margins.top + plotHeight()/2);
   ctx.rotate(-Math.PI/2);
-  ctx.fillText("총 정지거리 S(x) (m)", 0, 0);
+  ctx.fillText("총 정지거리 S(v) (m)", 0, 0);
   ctx.restore();
 }
 
@@ -665,7 +665,7 @@ function drawTitle() {
   ctx.font = "950 18px Pretendard, Arial";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText("S(x)=Ax²+Bx+0", margins.left, 12);
+  ctx.fillText("S(v)=Av²+Bv+0", margins.left, 12);
 
   ctx.font = "750 12px Pretendard, Arial";
   ctx.fillStyle = "#64748b";
@@ -2000,7 +2000,7 @@ hr {
 # ------------------------------------------------------------
 st.markdown("<div class='main-title'>🚲 픽시 자전거 정지거리와 이차함수</div>", unsafe_allow_html=True)
 st.markdown(
-    "<div class='main-subtitle'>속도, 반응 시간, 노면 상태가 정지거리 함수 S(x)=Ax²+Bx+0의 계수를 어떻게 바꾸는지 확인합니다.</div>",
+    "<div class='main-subtitle'>속도, 반응 시간, 노면 상태가 정지거리 함수 S(v)=Av²+Bv+0의 계수를 어떻게 바꾸는지 확인합니다.</div>",
     unsafe_allow_html=True,
 )
 
@@ -2247,8 +2247,8 @@ B = result["B"]
 st.markdown(
     f"""
 <div class='formula-box'>
-현재 조건의 함수: S(x) = {A:.5f}x² + {B:.3f}x + 0<br>
-완전제곱식: S(x) = {A:.5f}(x + {B/(2*A):.2f})² - {B*B/(4*A):.2f}
+현재 조건의 함수: S(v) = {A:.5f}v² + {B:.3f}v + 0<br>
+완전제곱식: S(v) = {A:.5f}(v + {B/(2*A):.2f})² - {B*B/(4*A):.2f}
 </div>
 """,
     unsafe_allow_html=True,
@@ -2288,31 +2288,31 @@ st.markdown("<div class='section-title'>3. 이론 정리</div>", unsafe_allow_ht
 st.markdown("### 3-1. 수학: 이차함수와 완전제곱식")
 st.markdown(
     """
-총 정지거리 함수는 초기 속도 \(x\)에 대한 이차함수입니다.  
-여기서 \(x\)는 km/h 단위의 초기 속도, \(S(x)\)는 m 단위의 총 정지거리입니다.
+총 정지거리 함수는 초기 속도 $v$에 대한 이차함수입니다.  
+여기서 $v$는 km/h 단위의 초기 속도, $S(v)$는 m 단위의 총 정지거리입니다.
 """
 )
-st.latex(r"S(x)=Ax^2+Bx+0")
+st.latex(r"S(v)=Av^2+Bv+0")
 st.markdown(
     """
-반응 시간 동안 이동한 거리는 속도에 비례하므로 일차항 \(Bx\)가 됩니다.  
-제동거리는 속도의 제곱에 비례하므로 이차항 \(Ax^2\)가 됩니다.
+반응 시간 동안 이동한 거리는 속도에 비례하므로 일차항 $Bv$가 됩니다.  
+제동거리는 속도의 제곱에 비례하므로 이차항 $Av^2$가 됩니다.
 """
 )
 
 st.markdown("#### 완전제곱식으로 바꾸기")
-st.latex(r"S(x)=Ax^2+Bx")
-st.latex(r"S(x)=A\left(x^2+\frac{B}{A}x\right)")
-st.latex(r"S(x)=A\left[\left(x+\frac{B}{2A}\right)^2-\left(\frac{B}{2A}\right)^2\right]")
-st.latex(r"S(x)=A\left(x+\frac{B}{2A}\right)^2-\frac{B^2}{4A}")
+st.latex(r"S(v)=Av^2+Bv")
+st.latex(r"S(v)=A\left(v^2+\frac{B}{A}v\right)")
+st.latex(r"S(v)=A\left[\left(v+\frac{B}{2A}\right)^2-\left(\frac{B}{2A}\right)^2\right]")
+st.latex(r"S(v)=A\left(v+\frac{B}{2A}\right)^2-\frac{B^2}{4A}")
 
 st.markdown(
     f"""
 <div class='info-box'>
 현재 조건에서는 <b>A={A:.5f}</b>, <b>B={B:.3f}</b>입니다.<br>
-꼭짓점은 대략 <b>({result["vertex_x"]:.2f}, {result["vertex_y"]:.2f})</b>입니다.
+꼭짓점은 대략 <b>(v={result["vertex_x"]:.2f}, S={result["vertex_y"]:.2f})</b>입니다.
 이 꼭짓점은 음수 속도 영역에 있으므로 실제 주행에서 직접 나타나는 지점은 아니지만,
-그래프가 기본 포물선 \(y=Ax^2\)을 평행이동한 형태임을 보여줍니다.
+그래프가 기본 포물선 <b>y=Av²</b>을 평행이동한 형태임을 보여줍니다.
 </div>
 """,
     unsafe_allow_html=True,
@@ -2321,7 +2321,7 @@ st.markdown(
 st.markdown("### 3-2. 과학(물리): 운동에너지, 마찰력, 일")
 st.markdown(
     """
-달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 \(v^2\)에 비례하여 커집니다.
+달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 $v^2$에 비례하여 커집니다.
 """
 )
 st.latex(r"E_k=\frac{1}{2}mv^2")
@@ -2345,7 +2345,7 @@ st.latex(r"\frac{1}{2}mv^2=\mu mg\cdot d")
 
 st.markdown(
     """
-위 식에서 질량 \(m\)은 양쪽에 모두 들어 있으므로 약분됩니다.
+위 식에서 질량 $m$은 양쪽에 모두 들어 있으므로 약분됩니다.
 그래서 이 단순 모델에서는 자전거+탑승자 질량을 바꾸어도 정지거리가 직접 변하지 않습니다.
 """
 )
@@ -2361,16 +2361,16 @@ st.latex(r"\text{제동거리}=\frac{v^2}{2\mu g}")
 st.markdown("따라서 총 정지거리는 다음과 같습니다.")
 st.latex(r"S(v)=vt_r+\frac{v^2}{2\mu g}")
 
-st.markdown("앱에서는 속도 단위를 km/h로 사용하므로 \(v=x/3.6\)을 대입합니다.")
-st.latex(r"v=\frac{x}{3.6}")
-st.latex(r"S(x)=\frac{1}{25.92\mu g}x^2+\frac{t_r}{3.6}x+0")
+st.markdown("앱의 그래프에서 쓰는 속도 변수 $v$는 km/h 단위입니다. 따라서 실제 m/s 단위 속도는 $v/3.6$입니다.")
+st.latex(r"v_{\mathrm{m/s}}=\frac{v}{3.6}")
+st.latex(r"S(v)=\frac{1}{25.92\mu g}v^2+\frac{t_r}{3.6}v+0")
 
 st.markdown(
     """
 <div class='info-box'>
 정리하면, 픽시 자전거의 위험성은 속도가 조금 증가할 때 정지거리가 단순히 조금 늘어나는 정도가 아니라,
 제동거리 항 때문에 <b>제곱에 가깝게 빠르게 증가한다</b>는 데 있습니다.
-특히 노면 마찰계수 \(\mu\)가 작으면 이차항의 계수 \(A\)가 커져 그래프가 더 가파르게 올라갑니다.
+특히 노면 마찰계수 μ가 작으면 이차항의 계수 A가 커져 그래프가 더 가파르게 올라갑니다.
 </div>
 """,
     unsafe_allow_html=True,
@@ -2470,6 +2470,46 @@ with c_inv2:
         )
 
 st.latex(r"S = vt_r + \frac{v^2}{2\mu g}")
+
+st.markdown("#### 근의 공식으로 최대 속도 구하기")
+st.markdown(
+    """
+위 식에서 멈출 수 있는 거리 $S$, 반응 시간 $t_r$, 마찰계수 $\mu$, 중력가속도 $g$가 정해져 있다고 보면,
+미지수는 속도 $v$입니다. 따라서 이 식은 $v$에 대한 이차방정식으로 볼 수 있습니다.
+"""
+)
+
+st.latex(r"\frac{1}{2\mu g}v^2+t_rv-S=0")
+st.markdown("양변에 $2\mu g$를 곱하면 다음과 같이 정리됩니다.")
+st.latex(r"v^2+2\mu g t_r v-2\mu g S=0")
+
+st.markdown("이차방정식 $av^2+bv+c=0$에서 각 계수는 다음과 같습니다.")
+st.latex(r"a=1,\quad b=2\mu g t_r,\quad c=-2\mu gS")
+
+st.markdown("근의 공식을 적용하면 다음과 같습니다.")
+st.latex(r"v=\frac{-2\mu g t_r\pm\sqrt{(2\mu g t_r)^2+8\mu gS}}{2}")
+
+st.markdown(
+    """
+속도는 음수가 될 수 없으므로, 물리적으로 의미 있는 해는 양의 근입니다.
+"""
+)
+st.latex(r"v=-\mu g t_r+\sqrt{(\mu g t_r)^2+2\mu gS}")
+
+st.markdown("이때 위 식으로 구한 $v$는 m/s 단위이므로, km/h로 바꾸려면 3.6을 곱합니다.")
+st.latex(r"v_{\mathrm{km/h}}=3.6\left[-\mu g t_r+\sqrt{(\mu g t_r)^2+2\mu gS}\right]")
+
+st.markdown(
+    f"""
+<div class='info-box'>
+현재 계산에서는 <b>S={available_distance:.1f} m</b>, <b>t<sub>r</sub>={personal_reaction_time:.2f} s</b>,
+<b>μ={mu:.2f}</b>, <b>g=9.8 m/s²</b>를 대입합니다.<br>
+따라서 최대 속도는 <b>{inverse_result["speed_ms"]:.2f} m/s</b>,
+즉 <b>{safe_speed_kmh:.1f} km/h</b>입니다.
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     f"""
