@@ -27,13 +27,6 @@ ROAD_OPTIONS = {
     "빙판길": {"mu": 0.10, "desc": "제동이 매우 어려운 노면"},
 }
 
-BRAKE_OPTIONS = {
-    "일반 자전거 브레이크": {"k": 0.85, "desc": "손 브레이크를 사용해 비교적 안정적으로 제동"},
-    "픽시 + 보조 브레이크": {"k": 0.60, "desc": "보조 브레이크가 있는 픽시 자전거"},
-    "픽시 페달 제동 중심": {"k": 0.40, "desc": "페달을 버티며 속도를 줄이는 상황"},
-    "픽시 미숙련 상황": {"k": 0.25, "desc": "빠르고 안정적인 제동이 어려운 상황"},
-}
-
 CURVE_COLORS = [
     "#2563eb", "#ef4444", "#059669", "#7c3aed", "#f59e0b",
     "#0f766e", "#be123c", "#0891b2", "#9333ea", "#ea580c",
@@ -58,9 +51,9 @@ def fmt_time(x: float) -> str:
     return f"{x:.2f} s"
 
 
-def calc_coefficients(reaction_time: float, mu: float, k: float) -> dict:
+def calc_coefficients(reaction_time: float, mu: float) -> dict:
     """S(x)=Ax^2+Bx+0. x 단위는 km/h, S 단위는 m."""
-    a_eff = mu * G * k
+    a_eff = mu * G
     A = 1 / (25.92 * a_eff) if a_eff > 0 else math.inf
     B = reaction_time / 3.6
     vertex_x = -B / (2 * A) if A > 0 and math.isfinite(A) else math.nan
@@ -74,9 +67,9 @@ def calc_coefficients(reaction_time: float, mu: float, k: float) -> dict:
     }
 
 
-def calc_result(speed_kmh: float, reaction_time: float, mu: float, k: float) -> dict:
+def calc_result(speed_kmh: float, reaction_time: float, mu: float) -> dict:
     v = speed_kmh / 3.6
-    coeff = calc_coefficients(reaction_time, mu, k)
+    coeff = calc_coefficients(reaction_time, mu)
     a_eff = coeff["a_eff"]
 
     reaction_distance = v * reaction_time
@@ -105,16 +98,17 @@ def risk_label(total_distance: float) -> tuple[str, str]:
         return "주의", "보행자나 장애물이 가까이 있으면 위험할 수 있습니다."
     if total_distance < 35:
         return "위험", "정지거리가 상당히 길어졌습니다. 속도를 낮추는 것이 가장 효과적입니다."
-    return "매우 위험", "속도와 제동 조건 때문에 정지거리가 급격히 길어졌습니다."
+    return "매우 위험", "속도와 노면 조건 때문에 정지거리가 급격히 길어졌습니다."
 
 
-def make_curve(name: str, reaction_time: float, mu: float, k: float, color: str, group: str) -> dict:
-    c = calc_coefficients(reaction_time, mu, k)
+def make_curve(name: str, mass: float, speed_kmh: float, reaction_time: float, mu: float, color: str, group: str) -> dict:
+    c = calc_coefficients(reaction_time, mu)
     return {
         "name": name,
+        "mass": float(mass),
+        "markerSpeed": float(speed_kmh),
         "reactionTime": float(reaction_time),
         "mu": float(mu),
-        "k": float(k),
         "A": float(c["A"]),
         "B": float(c["B"]),
         "aEff": float(c["a_eff"]),
@@ -127,7 +121,7 @@ def dedupe_curves(curves: list[dict]) -> list[dict]:
     seen = set()
     out = []
     for c in curves:
-        key = (round(c["reactionTime"], 4), round(c["mu"], 4), round(c["k"], 4), c["group"])
+        key = (round(c["mass"], 2), round(c["markerSpeed"], 2), round(c["reactionTime"], 4), round(c["mu"], 4), c["group"])
         if key in seen:
             continue
         seen.add(key)
@@ -309,10 +303,8 @@ function setBestView(xMin=-50, xMax=80) {
       const x = xMin + (xMax - xMin) * i / n;
       ys.push(f(curve, x));
     }
-  }
-  for (const marker of DATA.speedMarkers) {
-    if (marker >= xMin && marker <= xMax) {
-      for (const curve of DATA.curves) ys.push(f(curve, marker));
+    if (curve.markerSpeed >= xMin && curve.markerSpeed <= xMax) {
+      ys.push(f(curve, curve.markerSpeed));
     }
   }
   let yMin = Math.min(...ys);
@@ -327,23 +319,34 @@ function setBestView(xMin=-50, xMax=80) {
 }
 
 function resetView() {
-  setBestView(-50, Math.max(70, DATA.selectedSpeed + 25));
+  const maxMarker = Math.max(...DATA.curves.map(c => c.markerSpeed), DATA.selectedSpeed);
+  setBestView(-50, Math.max(70, maxMarker + 25));
   draw();
 }
 
 function focusPositive() {
-  setBestView(0, Math.max(60, DATA.selectedSpeed + 20));
+  const maxMarker = Math.max(...DATA.curves.map(c => c.markerSpeed), DATA.selectedSpeed);
+  setBestView(0, Math.max(60, maxMarker + 20));
   draw();
 }
 
-function zoom(factor, anchorX, anchorY) {
+function applyZoom(factor, anchorX, anchorY, mode="both") {
   const x0 = invX(anchorX);
   const y0 = invY(anchorY);
 
-  const newXMin = x0 + (view.xMin - x0) * factor;
-  const newXMax = x0 + (view.xMax - x0) * factor;
-  const newYMin = y0 + (view.yMin - y0) * factor;
-  const newYMax = y0 + (view.yMax - y0) * factor;
+  let newXMin = view.xMin;
+  let newXMax = view.xMax;
+  let newYMin = view.yMin;
+  let newYMax = view.yMax;
+
+  if (mode === "both" || mode === "x") {
+    newXMin = x0 + (view.xMin - x0) * factor;
+    newXMax = x0 + (view.xMax - x0) * factor;
+  }
+  if (mode === "both" || mode === "y") {
+    newYMin = y0 + (view.yMin - y0) * factor;
+    newYMax = y0 + (view.yMax - y0) * factor;
+  }
 
   if (Math.abs(newXMax - newXMin) < 3 || Math.abs(newYMax - newYMin) < 1) return;
   if (Math.abs(newXMax - newXMin) > 1000 || Math.abs(newYMax - newYMin) > 2000) return;
@@ -354,7 +357,7 @@ function zoom(factor, anchorX, anchorY) {
 
 function zoomAtCenter(factor) {
   const r = rect();
-  zoom(factor, r.width/2, r.height/2);
+  applyZoom(factor, r.width/2, r.height/2, "both");
 }
 
 function resizeCanvas() {
@@ -496,46 +499,49 @@ function drawMarkers() {
   ctx.rect(margins.left, margins.top, plotWidth(), plotHeight());
   ctx.clip();
 
-  for (const marker of DATA.speedMarkers) {
+  for (let i=0; i<DATA.curves.length; i++) {
+    const curve = DATA.curves[i];
+    const marker = curve.markerSpeed;
     if (marker < view.xMin || marker > view.xMax) continue;
+    const y = f(curve, marker);
     const px = sx(marker);
-    ctx.strokeStyle = marker === DATA.selectedSpeed ? "#111827" : "#94a3b8";
-    ctx.lineWidth = marker === DATA.selectedSpeed ? 2 : 1.3;
+
+    ctx.strokeStyle = curve.color;
+    ctx.globalAlpha = i === 0 ? 0.82 : 0.45;
+    ctx.lineWidth = i === 0 ? 2 : 1.5;
     ctx.setLineDash([6, 6]);
     ctx.beginPath();
     ctx.moveTo(px, margins.top);
     ctx.lineTo(px, margins.top + plotHeight());
     ctx.stroke();
 
-    for (let i=0; i<DATA.curves.length; i++) {
-      const curve = DATA.curves[i];
-      const y = f(curve, marker);
-      if (y < view.yMin || y > view.yMax) continue;
+    if (y >= view.yMin && y <= view.yMax) {
       ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = curve.color;
       ctx.beginPath();
-      ctx.arc(px, sy(y), marker === DATA.selectedSpeed && i === 0 ? 6 : 4, 0, Math.PI*2);
+      ctx.arc(px, sy(y), i === 0 ? 6 : 5, 0, Math.PI*2);
       ctx.fill();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = i === 0 ? "#0f172a" : curve.color;
+      ctx.font = "900 12px Pretendard, Arial";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "bottom";
+      const shortName = curve.group.replace("비교군 ", "G");
+      ctx.fillText(`${shortName}: ${marker.toFixed(0)} km/h, ${y.toFixed(1)} m`, px + 9, sy(y) - 8 - (i % 3) * 14);
     }
   }
 
-  // current label
-  const current = DATA.curves[0];
-  const cy = f(current, DATA.selectedSpeed);
-  if (DATA.selectedSpeed >= view.xMin && DATA.selectedSpeed <= view.xMax && cy >= view.yMin && cy <= view.yMax) {
-    const px = sx(DATA.selectedSpeed), py = sy(cy);
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "900 13px Pretendard, Arial";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "bottom";
-    ctx.fillText(`현재 ${DATA.selectedSpeed.toFixed(0)} km/h, ${cy.toFixed(1)} m`, px + 10, py - 10);
-  }
-
   // vertex of current curve
+  const current = DATA.curves[0];
   const A = current.A, B = current.B;
   const vx = -B / (2*A);
   const vy = f(current, vx);
   if (vx >= view.xMin && vx <= view.xMax && vy >= view.yMin && vy <= view.yMax) {
+    ctx.globalAlpha = 1;
     ctx.setLineDash([]);
     ctx.fillStyle = "#ef4444";
     ctx.beginPath();
@@ -604,7 +610,19 @@ canvas.addEventListener("mousemove", (e) => {
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   const factor = e.deltaY < 0 ? 0.86 : 1.16;
-  zoom(factor, e.offsetX, e.offsetY);
+
+  const inPlotX = e.offsetX >= margins.left && e.offsetX <= margins.left + plotWidth();
+  const inPlotY = e.offsetY >= margins.top && e.offsetY <= margins.top + plotHeight();
+  const onXAxis = inPlotX && e.offsetY > margins.top + plotHeight();
+  const onYAxis = e.offsetX < margins.left && inPlotY;
+
+  if (onXAxis) {
+    applyZoom(factor, e.offsetX, margins.top + plotHeight()/2, "x");
+  } else if (onYAxis) {
+    applyZoom(factor, margins.left + plotWidth()/2, e.offsetY, "y");
+  } else {
+    applyZoom(factor, e.offsetX, e.offsetY, "both");
+  }
 }, {passive:false});
 
 // touch pan
@@ -636,7 +654,7 @@ canvas.addEventListener("touchend", () => dragging = false);
 
 window.addEventListener("resize", resizeCanvas);
 buildLegend();
-setBestView(-50, Math.max(70, DATA.selectedSpeed + 25));
+setBestView(-50, Math.max(70, ...DATA.curves.map(c => c.markerSpeed + 25)));
 resizeCanvas();
 </script>
 </body>
@@ -1091,10 +1109,10 @@ hr {
 # ------------------------------------------------------------
 # 사이드바 입력
 # ------------------------------------------------------------
-st.sidebar.header("⚙️ 현재 조건 설정")
+st.sidebar.header("⚙️ 비교군 1: 시뮬레이션 기준")
 
 bike_mass = st.sidebar.slider(
-    "자전거+탑승자 질량(kg)",
+    "비교군 1 질량(kg)",
     min_value=40.0,
     max_value=100.0,
     value=65.0,
@@ -1103,7 +1121,7 @@ bike_mass = st.sidebar.slider(
 )
 
 speed_kmh = st.sidebar.slider(
-    "초기 속도 x (km/h)",
+    "비교군 1 초기 속도 x (km/h)",
     min_value=0,
     max_value=60,
     value=30,
@@ -1111,7 +1129,7 @@ speed_kmh = st.sidebar.slider(
 )
 
 reaction_time = st.sidebar.slider(
-    "반응 시간(초)",
+    "비교군 1 반응 시간(초)",
     min_value=0.20,
     max_value=2.50,
     value=1.00,
@@ -1119,11 +1137,8 @@ reaction_time = st.sidebar.slider(
     format="%.2f",
 )
 
-road_label = st.sidebar.selectbox("노면 상태", list(ROAD_OPTIONS.keys()), index=0)
+road_label = st.sidebar.selectbox("비교군 1 노면 상태", list(ROAD_OPTIONS.keys()), index=0)
 mu = ROAD_OPTIONS[road_label]["mu"]
-
-brake_label = st.sidebar.selectbox("제동 방식", list(BRAKE_OPTIONS.keys()), index=2)
-k = BRAKE_OPTIONS[brake_label]["k"]
 
 playback_speed = st.sidebar.slider(
     "시뮬레이션 배속",
@@ -1135,104 +1150,81 @@ playback_speed = st.sidebar.slider(
 )
 
 st.sidebar.divider()
-st.sidebar.header("📊 그래프 중첩 비교")
+st.sidebar.header("📊 그래프 비교군")
 
-compare_reaction = st.sidebar.checkbox("반응 시간별 그래프 중첩", value=True)
-reaction_choices = st.sidebar.multiselect(
-    "비교할 반응 시간(초)",
-    options=[0.30, 0.50, 0.70, 1.00, 1.30, 1.50, 2.00],
-    default=[0.50, 1.00, 1.50] if compare_reaction else [],
-    format_func=lambda x: f"{x:.2f}초",
-    disabled=not compare_reaction,
-)
+use_group2 = st.sidebar.checkbox("비교군 2 표시", value=True)
+if use_group2:
+    with st.sidebar.expander("비교군 2 설정", expanded=True):
+        mass2 = st.slider("비교군 2 질량(kg)", 40.0, 100.0, 65.0, 1.0, key="mass2")
+        speed2 = st.slider("비교군 2 초기 속도(km/h)", 0, 60, 40, 1, key="speed2")
+        reaction2 = st.slider("비교군 2 반응 시간(초)", 0.20, 2.50, 1.00, 0.01, format="%.2f", key="reaction2")
+        road2 = st.selectbox("비교군 2 노면 상태", list(ROAD_OPTIONS.keys()), index=1, key="road2")
+else:
+    mass2, speed2, reaction2, road2 = 65.0, 40, 1.00, "젖은 아스팔트"
 
-compare_roads = st.sidebar.checkbox("노면 상태별 그래프 중첩", value=True)
-road_choices = st.sidebar.multiselect(
-    "비교할 노면",
-    options=list(ROAD_OPTIONS.keys()),
-    default=["마른 아스팔트", "젖은 아스팔트", "빙판길"] if compare_roads else [],
-    disabled=not compare_roads,
-)
-
-compare_brakes = st.sidebar.checkbox("제동 방식별 그래프 중첩", value=False)
-brake_choices = st.sidebar.multiselect(
-    "비교할 제동 방식",
-    options=list(BRAKE_OPTIONS.keys()),
-    default=["일반 자전거 브레이크", "픽시 페달 제동 중심", "픽시 미숙련 상황"] if compare_brakes else [],
-    disabled=not compare_brakes,
-)
-
-speed_marker_choices = st.sidebar.multiselect(
-    "그래프에 표시할 초기 속도 마커",
-    options=[10, 20, 30, 40, 50, 60],
-    default=[20, 30, 40],
-)
+use_group3 = st.sidebar.checkbox("비교군 3 표시", value=True)
+if use_group3:
+    with st.sidebar.expander("비교군 3 설정", expanded=True):
+        mass3 = st.slider("비교군 3 질량(kg)", 40.0, 100.0, 65.0, 1.0, key="mass3")
+        speed3 = st.slider("비교군 3 초기 속도(km/h)", 0, 60, 50, 1, key="speed3")
+        reaction3 = st.slider("비교군 3 반응 시간(초)", 0.20, 2.50, 1.20, 0.01, format="%.2f", key="reaction3")
+        road3 = st.selectbox("비교군 3 노면 상태", list(ROAD_OPTIONS.keys()), index=2, key="road3")
+else:
+    mass3, speed3, reaction3, road3 = 65.0, 50, 1.20, "모래·낙엽길"
 
 # ------------------------------------------------------------
 # 현재 조건 계산
 # ------------------------------------------------------------
-result = calc_result(speed_kmh, reaction_time, mu, k)
+result = calc_result(speed_kmh, reaction_time, mu)
 risk, risk_text = risk_label(result["total_stopping_distance"])
 
-# 그래프 곡선 구성
+# 그래프 곡선 구성: 비교군 1, 2, 3
 curves = [
     make_curve(
-        name=f"현재 조건: {road_label}, {brake_label}, 반응 {reaction_time:.2f}s",
+        name=f"비교군 1: {bike_mass:.0f}kg, {speed_kmh}km/h, 반응 {reaction_time:.2f}s, {road_label}",
+        mass=bike_mass,
+        speed_kmh=speed_kmh,
         reaction_time=reaction_time,
         mu=mu,
-        k=k,
         color=CURVE_COLORS[0],
-        group="현재 조건",
+        group="비교군 1",
     )
 ]
 
-color_i = 1
-if compare_reaction:
-    for rt in reaction_choices:
-        curves.append(make_curve(
-            name=f"반응 {rt:.2f}s",
-            reaction_time=rt,
-            mu=mu,
-            k=k,
-            color=CURVE_COLORS[color_i % len(CURVE_COLORS)],
-            group="반응 시간 비교",
-        ))
-        color_i += 1
+if use_group2:
+    curves.append(
+        make_curve(
+            name=f"비교군 2: {mass2:.0f}kg, {speed2}km/h, 반응 {reaction2:.2f}s, {road2}",
+            mass=mass2,
+            speed_kmh=speed2,
+            reaction_time=reaction2,
+            mu=ROAD_OPTIONS[road2]["mu"],
+            color=CURVE_COLORS[1],
+            group="비교군 2",
+        )
+    )
 
-if compare_roads:
-    for rl in road_choices:
-        curves.append(make_curve(
-            name=f"{rl} μ={ROAD_OPTIONS[rl]['mu']:.2f}",
-            reaction_time=reaction_time,
-            mu=ROAD_OPTIONS[rl]["mu"],
-            k=k,
-            color=CURVE_COLORS[color_i % len(CURVE_COLORS)],
-            group="노면 비교",
-        ))
-        color_i += 1
-
-if compare_brakes:
-    for bl in brake_choices:
-        curves.append(make_curve(
-            name=f"{bl} k={BRAKE_OPTIONS[bl]['k']:.2f}",
-            reaction_time=reaction_time,
-            mu=mu,
-            k=BRAKE_OPTIONS[bl]["k"],
-            color=CURVE_COLORS[color_i % len(CURVE_COLORS)],
-            group="제동 방식 비교",
-        ))
-        color_i += 1
+if use_group3:
+    curves.append(
+        make_curve(
+            name=f"비교군 3: {mass3:.0f}kg, {speed3}km/h, 반응 {reaction3:.2f}s, {road3}",
+            mass=mass3,
+            speed_kmh=speed3,
+            reaction_time=reaction3,
+            mu=ROAD_OPTIONS[road3]["mu"],
+            color=CURVE_COLORS[2],
+            group="비교군 3",
+        )
+    )
 
 curves = dedupe_curves(curves)
-speed_markers = sorted(set([speed_kmh] + speed_marker_choices))
-
 
 # ------------------------------------------------------------
 # 화면 출력
 # ------------------------------------------------------------
 st.markdown("<div class='main-title'>🚲 픽시 자전거 정지거리와 이차함수</div>", unsafe_allow_html=True)
 st.markdown(
-    "<div class='main-subtitle'>속도, 반응 시간, 노면, 제동 방식이 정지거리 함수 S(x)=Ax²+Bx+0의 계수를 어떻게 바꾸는지 확인합니다.</div>",
+    "<div class='main-subtitle'>속도, 반응 시간, 노면 상태가 정지거리 함수 S(x)=Ax²+Bx+0의 계수를 어떻게 바꾸는지 확인합니다.</div>",
     unsafe_allow_html=True,
 )
 
@@ -1240,7 +1232,7 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("반응거리", fmt_m(result["reaction_distance"]), help="위험을 발견했지만 아직 제동하지 못한 동안 이동한 거리")
 c2.metric("제동거리", fmt_m(result["braking_distance"]), help="제동을 시작한 뒤 완전히 멈출 때까지 이동한 거리")
 c3.metric("총 정지거리", fmt_m(result["total_stopping_distance"]), help="반응거리 + 제동거리")
-c4.metric("유효 감속도", f"{result['a_eff']:.2f} m/s²", help="μ × g × k")
+c4.metric("유효 감속도", f"{result['a_eff']:.2f} m/s²", help="μ × g")
 
 c5, c6, c7, c8 = st.columns(4)
 c5.metric("반응 시간", f"{reaction_time:.2f} s")
@@ -1263,7 +1255,7 @@ st.markdown(
     """
 <div class='info-box'>
 그래프 위에서 <b>드래그</b>하면 화면을 이동할 수 있고, <b>마우스 휠</b>로 확대·축소할 수 있습니다.
-여러 반응 시간, 노면 상태, 제동 방식의 그래프를 한 화면에 중첩해 비교할 수 있습니다.
+비교군 1, 2, 3의 질량, 초기 속도, 반응 시간, 노면 상태를 설정하고 그래프를 한 화면에 중첩해 비교할 수 있습니다.
 </div>
 """,
     unsafe_allow_html=True,
@@ -1272,7 +1264,6 @@ st.markdown(
 graph_data = {
     "curves": curves,
     "selectedSpeed": float(speed_kmh),
-    "speedMarkers": [float(x) for x in speed_markers],
 }
 show_interactive_graph(graph_data)
 
@@ -1366,7 +1357,7 @@ st.markdown(
 """
 )
 st.latex(r"W=Fd")
-st.latex(r"F_{\mathrm{마찰}}\approx \mu mgk")
+st.latex(r"F_{\mathrm{마찰}}\approx \mu mg")
 
 st.markdown(
     """
@@ -1374,7 +1365,7 @@ st.markdown(
 시뮬레이션에서 연기와 미끄럼 자국은 이 에너지 전환을 눈에 보이게 표현한 것입니다.
 """
 )
-st.latex(r"\frac{1}{2}mv^2=\mu mgk\cdot d")
+st.latex(r"\frac{1}{2}mv^2=\mu mg\cdot d")
 
 st.markdown(
     """
@@ -1382,28 +1373,28 @@ st.markdown(
 그래서 이 단순 모델에서는 자전거+탑승자 질량을 바꾸어도 정지거리가 직접 변하지 않습니다.
 """
 )
-st.latex(r"d=\frac{v^2}{2\mu gk}")
+st.latex(r"d=\frac{v^2}{2\mu g}")
 
 st.markdown("### 3-3. 정지거리 식 만들기")
 st.markdown("반응거리는 다음과 같습니다.")
 st.latex(r"\text{반응거리}=vt_r")
 
 st.markdown("제동거리는 다음과 같습니다.")
-st.latex(r"\text{제동거리}=\frac{v^2}{2\mu gk}")
+st.latex(r"\text{제동거리}=\frac{v^2}{2\mu g}")
 
 st.markdown("따라서 총 정지거리는 다음과 같습니다.")
-st.latex(r"S(v)=vt_r+\frac{v^2}{2\mu gk}")
+st.latex(r"S(v)=vt_r+\frac{v^2}{2\mu g}")
 
 st.markdown("앱에서는 속도 단위를 km/h로 사용하므로 \(v=x/3.6\)을 대입합니다.")
 st.latex(r"v=\frac{x}{3.6}")
-st.latex(r"S(x)=\frac{1}{25.92\mu gk}x^2+\frac{t_r}{3.6}x+0")
+st.latex(r"S(x)=\frac{1}{25.92\mu g}x^2+\frac{t_r}{3.6}x+0")
 
 st.markdown(
     """
 <div class='info-box'>
 정리하면, 픽시 자전거의 위험성은 속도가 조금 증가할 때 정지거리가 단순히 조금 늘어나는 정도가 아니라,
 제동거리 항 때문에 <b>제곱에 가깝게 빠르게 증가한다</b>는 데 있습니다.
-특히 노면 마찰계수 \(\mu\)가 작거나 제동 효율 \(k\)가 작으면 이차항의 계수 \(A\)가 커져 그래프가 더 가파르게 올라갑니다.
+특히 노면 마찰계수 \(\mu\)가 작으면 이차항의 계수 \(A\)가 커져 그래프가 더 가파르게 올라갑니다.
 </div>
 """,
     unsafe_allow_html=True,
