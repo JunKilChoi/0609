@@ -101,6 +101,43 @@ def risk_label(total_distance: float) -> tuple[str, str]:
     return "매우 위험", "속도와 노면 조건 때문에 정지거리가 급격히 길어졌습니다."
 
 
+def inverse_max_speed_kmh(available_distance: float, reaction_time: float, mu: float) -> dict:
+    """주어진 거리 안에서 멈출 수 있는 최대 초기 속력을 역산한다.
+
+    available_distance: 위험 발견 지점부터 보행자 또는 장애물까지의 거리(m)
+    reaction_time: 반응 시간(s)
+    mu: 노면 마찰계수
+    """
+    if available_distance <= 0 or reaction_time < 0 or mu <= 0:
+        return {
+            "speed_ms": 0.0,
+            "speed_kmh": 0.0,
+            "reaction_distance": 0.0,
+            "braking_distance": 0.0,
+            "total_distance": 0.0,
+            "a_eff": max(0.0, mu * G),
+        }
+
+    a_eff = mu * G
+
+    # S = v t_r + v^2/(2 μ g) = d 를 v에 대해 푼다.
+    # v^2/(2a) + t v - d = 0, a = μg
+    speed_ms = -a_eff * reaction_time + math.sqrt((a_eff * reaction_time) ** 2 + 2 * a_eff * available_distance)
+    speed_kmh = speed_ms * 3.6
+    reaction_distance = speed_ms * reaction_time
+    braking_distance = (speed_ms * speed_ms) / (2 * a_eff)
+    total_distance = reaction_distance + braking_distance
+
+    return {
+        "speed_ms": speed_ms,
+        "speed_kmh": speed_kmh,
+        "reaction_distance": reaction_distance,
+        "braking_distance": braking_distance,
+        "total_distance": total_distance,
+        "a_eff": a_eff,
+    }
+
+
 def make_curve(name: str, mass: float, speed_kmh: float, reaction_time: float, mu: float, color: str, group: str) -> dict:
     c = calc_coefficients(reaction_time, mu)
     return {
@@ -2251,23 +2288,23 @@ st.markdown("<div class='section-title'>3. 이론 정리</div>", unsafe_allow_ht
 st.markdown("### 3-1. 수학: 이차함수와 완전제곱식")
 st.markdown(
     """
-총 정지거리 함수는 초기 속도 $v$에 대한 이차함수입니다.  
-여기서 $v$는 km/h 단위의 초기 속도, $S(v)$는 m 단위의 총 정지거리입니다.
+총 정지거리 함수는 초기 속도 \(x\)에 대한 이차함수입니다.  
+여기서 \(x\)는 km/h 단위의 초기 속도, \(S(x)\)는 m 단위의 총 정지거리입니다.
 """
 )
-st.latex(r"S(v)=Av^2+Bv+0")
+st.latex(r"S(x)=Ax^2+Bx+0")
 st.markdown(
     """
-반응 시간 동안 이동한 거리는 속도에 비례하므로 일차항 $Bv$가 됩니다.  
-제동거리는 속도의 제곱에 비례하므로 이차항 $Av^2$가 됩니다.
+반응 시간 동안 이동한 거리는 속도에 비례하므로 일차항 \(Bx\)가 됩니다.  
+제동거리는 속도의 제곱에 비례하므로 이차항 \(Ax^2\)가 됩니다.
 """
 )
 
 st.markdown("#### 완전제곱식으로 바꾸기")
-st.latex(r"S(v)=Av^2+Bv")
-st.latex(r"S(v)=A\left(v^2+\frac{B}{A}v\right)")
-st.latex(r"S(v)=A\left[\left(v+\frac{B}{2A}\right)^2-\left(\frac{B}{2A}\right)^2\right]")
-st.latex(r"S(v)=A\left(v+\frac{B}{2A}\right)^2-\frac{B^2}{4A}")
+st.latex(r"S(x)=Ax^2+Bx")
+st.latex(r"S(x)=A\left(x^2+\frac{B}{A}x\right)")
+st.latex(r"S(x)=A\left[\left(x+\frac{B}{2A}\right)^2-\left(\frac{B}{2A}\right)^2\right]")
+st.latex(r"S(x)=A\left(x+\frac{B}{2A}\right)^2-\frac{B^2}{4A}")
 
 st.markdown(
     f"""
@@ -2284,7 +2321,7 @@ st.markdown(
 st.markdown("### 3-2. 과학(물리): 운동에너지, 마찰력, 일")
 st.markdown(
     """
-달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 $v^2$에 비례하여 커집니다.
+달리는 자전거는 운동에너지를 가지고 있습니다. 속도가 커질수록 운동에너지는 \(v^2\)에 비례하여 커집니다.
 """
 )
 st.latex(r"E_k=\frac{1}{2}mv^2")
@@ -2308,7 +2345,7 @@ st.latex(r"\frac{1}{2}mv^2=\mu mg\cdot d")
 
 st.markdown(
     """
-위 식에서 질량 $m$은 양쪽에 모두 들어 있으므로 약분됩니다.
+위 식에서 질량 \(m\)은 양쪽에 모두 들어 있으므로 약분됩니다.
 그래서 이 단순 모델에서는 자전거+탑승자 질량을 바꾸어도 정지거리가 직접 변하지 않습니다.
 """
 )
@@ -2333,7 +2370,7 @@ st.markdown(
 <div class='info-box'>
 정리하면, 픽시 자전거의 위험성은 속도가 조금 증가할 때 정지거리가 단순히 조금 늘어나는 정도가 아니라,
 제동거리 항 때문에 <b>제곱에 가깝게 빠르게 증가한다</b>는 데 있습니다.
-특히 노면 마찰계수 $mu$가 작으면 이차항의 계수 $A$가 커져 그래프가 더 가파르게 올라갑니다.
+특히 노면 마찰계수 \(\mu\)가 작으면 이차항의 계수 \(A\)가 커져 그래프가 더 가파르게 올라갑니다.
 </div>
 """,
     unsafe_allow_html=True,
@@ -2363,6 +2400,89 @@ vpython_code = build_vpython_student_code(
     road_name=str(road_label),
 )
 show_copyable_code(vpython_code)
+
+st.markdown("---")
+
+st.markdown("<div class='section-title'>5. 내 반응속도 기준 안전 속도 역산</div>", unsafe_allow_html=True)
+
+st.markdown(
+    """
+<div class='info-box'>
+아래 계산은 VPython 실습 코드의 상황을 기준으로 합니다.
+위험 발견 위치는 출발선 기준 <b>5 m</b>, 보행자 위치는 출발선 기준 <b>10 m</b>이므로,
+위험을 발견한 뒤 보행자까지 남은 거리는 <b>5 m</b>입니다.
+본인의 반응속도와 현재 비교군 1의 노면 조건에서, 이 5 m 안에 멈추려면 몇 km/h 이하로 달려야 하는지 역산합니다.
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+VPYTHON_DANGER_X = 5.0
+VPYTHON_PEDESTRIAN_X = 10.0
+available_distance = VPYTHON_PEDESTRIAN_X - VPYTHON_DANGER_X
+
+c_inv1, c_inv2 = st.columns([1, 1])
+
+with c_inv1:
+    personal_reaction_time = st.number_input(
+        "본인 반응속도 입력(초)",
+        min_value=0.10,
+        max_value=3.00,
+        value=float(reaction_time),
+        step=0.01,
+        format="%.2f",
+        help="반응속도 측정 페이지에서 나온 평균값을 초 단위로 입력합니다. 예: 420 ms = 0.420초",
+    )
+
+    st.caption(
+        f"현재 비교군 1 노면: {road_label} / 마찰계수 μ = {mu:.2f} / 위험 발견 후 보행자까지 거리 = {available_distance:.1f} m"
+    )
+
+inverse_result = inverse_max_speed_kmh(
+    available_distance=available_distance,
+    reaction_time=float(personal_reaction_time),
+    mu=float(mu),
+)
+
+current_total_for_personal = calc_result(
+    speed_kmh=float(speed_kmh),
+    reaction_time=float(personal_reaction_time),
+    mu=float(mu),
+)
+
+with c_inv2:
+    safe_speed_kmh = inverse_result["speed_kmh"]
+    margin = available_distance - current_total_for_personal["total_stopping_distance"]
+
+    st.metric(
+        "5 m 안에 멈추기 위한 최대 속도",
+        f"{safe_speed_kmh:.1f} km/h",
+        delta=f"현재 비교군 1 속도 {float(speed_kmh):.0f} km/h",
+    )
+
+    if margin >= 0:
+        st.success(
+            f"현재 속도 {float(speed_kmh):.0f} km/h에서는 약 {margin:.1f} m 여유를 두고 멈출 수 있습니다."
+        )
+    else:
+        st.error(
+            f"현재 속도 {float(speed_kmh):.0f} km/h에서는 약 {abs(margin):.1f} m만큼 더 필요합니다. 보행자 위치를 지나서 멈추는 조건입니다."
+        )
+
+st.latex(r"S = vt_r + \frac{v^2}{2\mu g}")
+
+st.markdown(
+    f"""
+<div class='info-box'>
+역산 결과, 본인 반응속도 <b>{personal_reaction_time:.2f}초</b>와 현재 노면 <b>{road_label}</b> 조건에서
+위험 발견 후 <b>{available_distance:.1f} m</b> 안에 멈추려면 초기 속도는 약
+<b>{safe_speed_kmh:.1f} km/h 이하</b>여야 합니다.<br>
+이때 반응거리는 약 <b>{inverse_result["reaction_distance"]:.1f} m</b>,
+제동거리는 약 <b>{inverse_result["braking_distance"]:.1f} m</b>입니다.
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 st.markdown("---")
 st.markdown(
