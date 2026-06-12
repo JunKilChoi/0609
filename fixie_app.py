@@ -272,9 +272,50 @@ const canvas = document.getElementById("graph");
 const ctx = canvas.getContext("2d");
 
 const margins = {left: 78, right: 28, top: 38, bottom: 72};
+
+// Streamlit은 슬라이더 값을 바꿀 때 앱을 다시 그리므로,
+// 그래프를 드래그/확대해 놓은 시야가 초기화될 수 있다.
+// 브라우저 localStorage에 view를 저장해 비교군 설정을 바꿔도 시야를 유지한다.
+const VIEW_STORAGE_KEY = "fixie_quadratic_graph_view_v1";
 let view = {xMin: -40, xMax: 80, yMin: -20, yMax: 80};
 let dragging = false;
 let last = null;
+
+function validView(v) {
+  return v &&
+    Number.isFinite(v.xMin) && Number.isFinite(v.xMax) &&
+    Number.isFinite(v.yMin) && Number.isFinite(v.yMax) &&
+    v.xMax > v.xMin && v.yMax > v.yMin &&
+    Math.abs(v.xMax - v.xMin) >= 3 &&
+    Math.abs(v.yMax - v.yMin) >= 1;
+}
+
+function saveView() {
+  try {
+    if (validView(view)) {
+      localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(view));
+    }
+  } catch (e) {
+    // localStorage 사용이 막힌 환경이면 저장만 건너뛴다.
+  }
+}
+
+function loadView() {
+  try {
+    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return validView(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearSavedView() {
+  try {
+    localStorage.removeItem(VIEW_STORAGE_KEY);
+  } catch (e) {}
+}
 
 function rect() { return canvas.getBoundingClientRect(); }
 function plotWidth() { return rect().width - margins.left - margins.right; }
@@ -319,14 +360,17 @@ function setBestView(xMin=-50, xMax=80) {
 }
 
 function resetView() {
+  clearSavedView();
   const maxMarker = Math.max(...DATA.curves.map(c => c.markerSpeed), DATA.selectedSpeed);
   setBestView(-50, Math.max(70, maxMarker + 25));
+  saveView();
   draw();
 }
 
 function focusPositive() {
   const maxMarker = Math.max(...DATA.curves.map(c => c.markerSpeed), DATA.selectedSpeed);
   setBestView(0, Math.max(60, maxMarker + 20));
+  saveView();
   draw();
 }
 
@@ -352,6 +396,7 @@ function applyZoom(factor, anchorX, anchorY, mode="both") {
   if (Math.abs(newXMax - newXMin) > 1000 || Math.abs(newYMax - newYMin) > 2000) return;
 
   view = {xMin:newXMin, xMax:newXMax, yMin:newYMin, yMax:newYMax};
+  saveView();
   draw();
 }
 
@@ -627,6 +672,7 @@ canvas.addEventListener("mousemove", (e) => {
   view.yMin += dyWorld;
   view.yMax += dyWorld;
   last = {x:e.offsetX, y:e.offsetY};
+  saveView();
   draw();
 });
 
@@ -671,15 +717,22 @@ canvas.addEventListener("touchmove", (e) => {
   view.yMin += dy / plotHeight() * ySpan;
   view.yMax += dy / plotHeight() * ySpan;
   last = {x, y};
+  saveView();
   draw();
 }, {passive:false});
 canvas.addEventListener("touchend", () => dragging = false);
 
 window.addEventListener("resize", resizeCanvas);
 buildLegend();
-// 초기 화면: x축 0~20 km/h, y축 0~15 m.
-// 이후 드래그, 휠, 버튼으로 자유롭게 이동·확대할 수 있다.
-view = {xMin: 0, xMax: 20, yMin: 0, yMax: 15};
+// 최초 접속 시에는 x축 0~20 km/h, y축 0~15 m.
+// 이후 사용자가 드래그/확대해 놓은 시야는 비교군 설정을 바꿔도 localStorage에서 복원한다.
+const savedView = loadView();
+if (savedView) {
+  view = savedView;
+} else {
+  view = {xMin: 0, xMax: 20, yMin: 0, yMax: 15};
+  saveView();
+}
 resizeCanvas();
 </script>
 </body>
@@ -813,7 +866,7 @@ def build_simulation_html(data: dict) -> str:
   }
   .energy-canvas {
     width: 100%;
-    height: 470px;
+    height: 560px;
     display: block;
   }
   @media (max-width: 900px) {
@@ -1182,22 +1235,23 @@ function drawEnergyChart(currentT) {
   const info = resizeChartCanvas(canvas);
   if (!info) return;
   const ctx = info.ctx, w = info.w, h = info.h;
-  const m = {left: 62, right: 18, top: 22, bottom: 40};
+
+  // 0J x축을 화면 바닥에 붙이지 않고 충분히 위로 올려 고정한다.
+  // 이렇게 해야 0J 축, 0J 숫자, 시간 눈금이 절대 잘리지 않는다.
+  const m = {left: 78, right: 24, top: 30, bottom: 118};
   const pw = w - m.left - m.right;
-  const ph = h - m.top - m.bottom;
+  const xAxisY = h - m.bottom;
+  const ph = xAxisY - m.top;
+
   const totalT = Math.max(0.001, DATA.approachTime + DATA.reactionTime + DATA.brakingTime);
   const initialKE = 0.5 * DATA.massKg * DATA.speedMs * DATA.speedMs;
-  // 에너지 그래프는 0J x축이 바닥에 딱 붙어 잘리지 않도록
-  // y축 아래쪽에 약간의 음수 여백을 둔다. 음수 값은 눈금으로 표시하지 않는다.
   const yMaxRaw = Math.max(100, initialKE * 1.10);
   const yStep = niceChartStep(yMaxRaw / 5);
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
-  const yMin = -0.08 * yMax;
   const xStep = niceChartStep(totalT / 7);
 
   const sxT = t => m.left + (t / totalT) * pw;
-  const syE = e => m.top + ph - ((e - yMin) / (yMax - yMin)) * ph;
-  const xAxisY = syE(0);
+  const syE = e => xAxisY - (Math.max(0, e) / yMax) * ph;
 
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#ffffff";
@@ -1231,13 +1285,24 @@ function drawEnergyChart(currentT) {
   }
 
   // y축과 0J x축을 화면 안쪽에 분명하게 그린다.
-  ctx.strokeStyle = "#1f2937";
-  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 3.0;
   ctx.beginPath();
   ctx.moveTo(m.left, m.top);
   ctx.lineTo(m.left, xAxisY);
   ctx.lineTo(m.left + pw, xAxisY);
   ctx.stroke();
+
+  // 0J가 반드시 보이도록 축 옆에 굵게 다시 표시한다.
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(4, xAxisY - 13, m.left - 10, 26);
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "950 13px Pretendard, Arial";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText("0 J", m.left - 9, xAxisY);
+  ctx.restore();
 
   const events = [
     {t: DATA.approachTime, label: "위험 발견", color: "#38bdf8"},
@@ -1344,9 +1409,9 @@ function drawEnergyChart(currentT) {
   ctx.font = "850 11px Pretendard, Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
-  ctx.fillText("시간 t (s)", m.left + pw/2, Math.min(h - 2, xAxisY + 34));
+  ctx.fillText("시간 t (s)", m.left + pw/2, xAxisY + 46);
   ctx.save();
-  ctx.translate(13, m.top + ph/2);
+  ctx.translate(18, m.top + ph/2);
   ctx.rotate(-Math.PI/2);
   ctx.fillText("에너지 (J)", 0, 0);
   ctx.restore();
@@ -1533,7 +1598,7 @@ restart();
 
 
 def show_simulation(data: dict):
-    components.html(build_simulation_html(data), height=1600, scrolling=False)
+    components.html(build_simulation_html(data), height=1780, scrolling=False)
 
 
 # ------------------------------------------------------------
